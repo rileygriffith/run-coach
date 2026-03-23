@@ -71,6 +71,18 @@ header {
   color: #000;
 }
 
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 0.875rem;
+}
+
+.header-icon {
+  width: 80px;
+  height: 80px;
+  object-fit: contain;
+}
+
 .logo {
   font-size: 1.75rem;
   font-weight: 700;
@@ -193,11 +205,21 @@ header {
 .workout-card:hover { transform: translateY(-2px); }
 .workout-card:active { transform: translateY(0); }
 
-.workout-card.selected { background: var(--surface-2); }
+.workout-card.selected { background: var(--surface-2); border-color: var(--green); }
 
-.workout-card.recommended { border-color: var(--blue); }
-.workout-card.harder      { border-color: var(--orange); }
-.workout-card.easier      { border-color: var(--green); }
+.workout-selected-note {
+  display: none;
+  margin-top: 1rem;
+  font-size: 0.82rem;
+  color: var(--green);
+  font-weight: 500;
+}
+
+.workout-card.selected .workout-selected-note { display: block; }
+
+.workout-card.option_a { border-color: var(--blue); }
+.workout-card.option_b { border-color: var(--blue); }
+.workout-card.option_c { border-color: var(--blue); }
 
 .badge {
   display: inline-block;
@@ -210,9 +232,9 @@ header {
   margin-bottom: 1rem;
 }
 
-.recommended .badge { background: rgba(96,165,250,0.12); color: var(--blue); }
-.harder      .badge { background: rgba(251,146,60,0.12);  color: var(--orange); }
-.easier      .badge { background: rgba(74,222,128,0.12);  color: var(--green); }
+.option_a .badge,
+.option_b .badge,
+.option_c .badge { background: rgba(96,165,250,0.12); color: var(--blue); }
 
 .workout-type {
   font-size: 1.05rem;
@@ -260,40 +282,46 @@ header {
 }
 
 /* ── Calendar ────────────────────────────────────────────────────────────────── */
+.cal-months-row {
+  display: flex;
+  gap: 2rem;
+  flex-wrap: wrap;
+}
+
 .cal-month-label {
-  font-size: 0.75rem;
+  font-size: 0.8rem;
   font-weight: 600;
   color: var(--text-muted);
-  margin-bottom: 0.5rem;
+  margin-bottom: 0.6rem;
 }
 
 .cal-grid {
   display: grid;
-  grid-template-columns: repeat(7, 28px);
-  gap: 3px;
+  grid-template-columns: repeat(7, 36px);
+  gap: 4px;
 }
 
 .cal-day-label {
-  font-size: 0.55rem;
+  font-size: 0.6rem;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--text-muted);
   text-align: center;
-  padding-bottom: 0.25rem;
+  padding-bottom: 0.3rem;
 }
 
 .cal-cell {
-  width: 28px;
-  height: 28px;
+  width: 36px;
+  height: 36px;
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 5px;
+  border-radius: 6px;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 2px;
+  gap: 3px;
 }
 
 .cal-cell.empty {
@@ -302,7 +330,7 @@ header {
 }
 
 .cal-day-num {
-  font-size: 0.65rem;
+  font-size: 0.72rem;
   color: var(--text-muted);
   font-weight: 500;
   line-height: 1;
@@ -327,8 +355,8 @@ header {
 }
 
 .cal-dot {
-  width: 4px;
-  height: 4px;
+  width: 5px;
+  height: 5px;
   border-radius: 50%;
   background: var(--green);
 }

@@ -10,8 +10,13 @@
   <div class="app">
 
     <header>
-      <div class="logo">Running Coach</div>
-      <div class="subtitle">AI-powered training recommendations</div>
+      <div class="header-left">
+        <img src="icon.png" alt="Running Coach" class="header-icon" />
+        <div>
+          <div class="logo">Running Coach</div>
+          <div class="subtitle">AI-powered training recommendations</div>
+        </div>
+      </div>
       <div class="unit-toggle">
         <button id="unit-km" class="unit-btn">km</button>
         <button id="unit-mi" class="unit-btn active">mi</button>
@@ -32,13 +37,7 @@
       <div id="workouts-grid" class="workouts-grid"></div>
     </section>
 
-    <!-- Confirmed session -->
-    <section id="confirmed-section" class="section" hidden>
-      <h2 class="section-label">Today's Session</h2>
-      <div id="confirmed-card" class="confirmed-card"></div>
-    </section>
-
-    <!-- Recent runs -->
+<!-- Recent runs -->
     <section class="section">
       <h2 class="section-label">Recent Runs</h2>
       <div id="runs-grid" class="runs-grid">

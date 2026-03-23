@@ -25,24 +25,17 @@ function unitLabel() {
   return useImperial ? 'mi' : 'km';
 }
 
-function renderCalendar(runs) {
-  const runDates = new Set(runs.map((r) => r.date.slice(0, 10)));
-
-  const today = new Date();
-  const year = today.getFullYear();
-  const month = today.getMonth();
-
-  const firstDay = new Date(year, month, 1).getDay(); // 0=Sun
+function buildMonthGrid(year, month, runDates, todayStr) {
+  const monthName = new Date(year, month, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+  const firstDay = new Date(year, month, 1).getDay();
   const daysInMonth = new Date(year, month + 1, 0).getDate();
-  const monthName = today.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
 
-  const dayLabels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+  const dayLabels = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa']
     .map((d) => `<div class="cal-day-label">${d}</div>`)
     .join('');
 
   const blanks = Array.from({ length: firstDay }, () => '<div class="cal-cell empty"></div>').join('');
 
-  const todayStr = today.toISOString().slice(0, 10);
   const cells = Array.from({ length: daysInMonth }, (_, i) => {
     const d = i + 1;
     const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
@@ -54,12 +47,33 @@ function renderCalendar(runs) {
     return `<div class="${cls}"><span class="cal-day-num">${d}</span>${hasRun ? '<span class="cal-dot"></span>' : ''}</div>`;
   }).join('');
 
+  return `
+    <div class="cal-month">
+      <div class="cal-month-label">${monthName}</div>
+      <div class="cal-grid">
+        ${dayLabels}
+        ${blanks}
+        ${cells}
+      </div>
+    </div>
+  `;
+}
+
+function renderCalendar(runs) {
+  const runDates = new Set(runs.map((r) => r.date.slice(0, 10)));
+  const today = new Date();
+  const todayStr = today.toISOString().slice(0, 10);
+
+  const curYear = today.getFullYear();
+  const curMonth = today.getMonth();
+  const prevDate = new Date(curYear, curMonth - 1, 1);
+  const prevYear = prevDate.getFullYear();
+  const prevMonth = prevDate.getMonth();
+
   document.getElementById('calendar').innerHTML = `
-    <div class="cal-month-label">${monthName}</div>
-    <div class="cal-grid">
-      ${dayLabels}
-      ${blanks}
-      ${cells}
+    <div class="cal-months-row">
+      ${buildMonthGrid(prevYear, prevMonth, runDates, todayStr)}
+      ${buildMonthGrid(curYear, curMonth, runDates, todayStr)}
     </div>
   `;
 }
@@ -100,6 +114,19 @@ async function loadActivities() {
     }
 
     allRuns = data;
+
+    // Clear saved workouts if a new run has appeared since they were generated
+    const saved = localStorage.getItem('lastWorkouts');
+    if (saved) {
+      try {
+        const { latestRun } = JSON.parse(saved);
+        if (latestRun && data.length && data[0].date !== latestRun) {
+          localStorage.removeItem('lastWorkouts');
+          localStorage.removeItem('selectedWorkout');
+        }
+      } catch (_) { localStorage.removeItem('lastWorkouts'); }
+    }
+
     renderCalendar(data);
     const recent = data.slice(0, 5);
 
@@ -132,6 +159,7 @@ async function loadActivities() {
     `).join('');
 
     document.getElementById('generate-btn').disabled = false;
+    document.querySelector('.generate-section').hidden = !!localStorage.getItem('lastWorkouts');
   } catch (err) {
     grid.innerHTML = `<div class="state-error">Failed to load activities: ${err.message}</div>`;
   }
@@ -152,15 +180,15 @@ async function generateWorkout() {
   document.getElementById('confirmed-section').hidden = true;
 
   try {
-    const res = await fetch('/api/generate-workout', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ runs: allRuns }),
-    });
+    const res = await fetch('/api/generate-workout', { method: 'POST' });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Unknown error');
 
     currentWorkouts = data;
+    localStorage.setItem('lastWorkouts', JSON.stringify({
+      workouts: data,
+      latestRun: allRuns.length ? allRuns[0].date : null,
+    }));
     renderWorkouts(data);
     document.getElementById('workouts-section').hidden = false;
     document.getElementById('workouts-section').scrollIntoView({ behavior: 'smooth' });
@@ -177,9 +205,9 @@ function renderWorkouts(workouts) {
   const grid = document.getElementById('workouts-grid');
 
   const options = [
-    { key: 'easier',      label: 'Easier Alternative' },
-    { key: 'recommended', label: 'Recommended'         },
-    { key: 'harder',      label: 'Harder Alternative'  },
+    { key: 'option_a', label: 'Option A' },
+    { key: 'option_b', label: 'Option B' },
+    { key: 'option_c', label: 'Option C' },
   ];
 
   grid.innerHTML = options.map(({ key, label }) => {
@@ -192,6 +220,7 @@ function renderWorkouts(workouts) {
         <div class="workout-structure">${w.structure}</div>
         <div class="workout-pace">Target: ${w.target_pace}</div>
         <div class="workout-rationale">${w.rationale}</div>
+        <div class="workout-selected-note">✓ Selected for today</div>
       </div>
     `;
   }).join('');
@@ -200,45 +229,22 @@ function renderWorkouts(workouts) {
   grid.querySelectorAll('.workout-card').forEach((card) => {
     card.addEventListener('click', () => selectWorkout(card.dataset.type));
   });
+
+  // Restore previous selection
+  const prev = localStorage.getItem('selectedWorkout');
+  if (prev) {
+    const prevCard = document.querySelector(`[data-type="${prev}"]`);
+    if (prevCard) prevCard.classList.add('selected');
+  }
 }
 
-// ── Select / log workout ──────────────────────────────────────────────────────
+// ── Select workout ────────────────────────────────────────────────────────────
 
-async function selectWorkout(type) {
-  if (!currentWorkouts) return;
-  const workout = currentWorkouts[type];
-
-  // Highlight selected card
+function selectWorkout(type) {
   document.querySelectorAll('.workout-card').forEach((c) => c.classList.remove('selected'));
   const selected = document.querySelector(`[data-type="${type}"]`);
   if (selected) selected.classList.add('selected');
-
-  // Log to server (fire and forget — non-blocking)
-  fetch('/api/log-workout', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ workout: { ...workout, variant: type } }),
-  }).catch(console.error);
-
-  // Show confirmed session
-  const labels = {
-    recommended: 'Recommended',
-    harder: 'Harder Alternative',
-    easier: 'Easier Alternative',
-  };
-
-  document.getElementById('confirmed-card').innerHTML = `
-    <span class="badge" style="background:rgba(96,165,250,0.1);color:#60a5fa">${labels[type]}</span>
-    <div class="workout-type">${workout.type}</div>
-    <div class="workout-structure" style="margin:.4rem 0">${workout.structure}</div>
-    <div class="workout-pace">Target: ${workout.target_pace}</div>
-    <div class="workout-rationale">${workout.rationale}</div>
-    <div class="confirmed-note">✓ Logged as today's session</div>
-  `;
-
-  const section = document.getElementById('confirmed-section');
-  section.hidden = false;
-  section.scrollIntoView({ behavior: 'smooth' });
+  localStorage.setItem('selectedWorkout', type);
 }
 
 // ── Init ──────────────────────────────────────────────────────────────────────
@@ -247,6 +253,18 @@ const todayLabel = new Date().toLocaleDateString('en-US', { month: 'long', day: 
 document.getElementById('btn-text').textContent = `Generate Workout for ${todayLabel}`;
 
 document.getElementById('generate-btn').addEventListener('click', generateWorkout);
+
+const saved = localStorage.getItem('lastWorkouts');
+if (saved) {
+  try {
+    const parsed = JSON.parse(saved);
+    if (!parsed.workouts) throw new Error('stale format');
+    currentWorkouts = parsed.workouts;
+    renderWorkouts(currentWorkouts);
+    document.getElementById('workouts-section').hidden = false;
+    document.querySelector('.generate-section').hidden = true;
+  } catch (_) { localStorage.removeItem('lastWorkouts'); }
+}
 
 document.getElementById('unit-km').addEventListener('click', () => {
   useImperial = false;
