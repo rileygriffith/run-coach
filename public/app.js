@@ -141,18 +141,6 @@ async function loadActivities() {
 
     allRuns = data;
 
-    // Clear saved workouts if a new run has appeared since they were generated
-    const saved = localStorage.getItem('lastWorkouts');
-    if (saved) {
-      try {
-        const { latestRun } = JSON.parse(saved);
-        if (latestRun && data.length && data[0].date !== latestRun) {
-          localStorage.removeItem('lastWorkouts');
-          localStorage.removeItem('selectedWorkout');
-        }
-      } catch (_) { localStorage.removeItem('lastWorkouts'); }
-    }
-
     renderCalendar(data);
     const recent = data.slice(0, 5);
 
@@ -192,7 +180,7 @@ async function loadActivities() {
 
 // ── Generate workouts ─────────────────────────────────────────────────────────
 
-async function generateWorkout() {
+async function generateWorkout(soreness = 'none') {
   const btn        = document.getElementById('generate-btn');
   const btnText    = document.getElementById('btn-text');
   const btnLoading = document.getElementById('btn-loading');
@@ -208,17 +196,13 @@ async function generateWorkout() {
     const res = await fetch('/api/generate-workout', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ goal, units: useImperial ? 'miles' : 'km' }),
+      body: JSON.stringify({ goal, units: useImperial ? 'miles' : 'km', soreness }),
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Unknown error');
 
     const { workouts, input_tokens, output_tokens } = data;
     currentWorkouts = workouts;
-    localStorage.setItem('lastWorkouts', JSON.stringify({
-      workouts,
-      latestRun: allRuns.length ? allRuns[0].date : null,
-    }));
     renderWorkouts(workouts);
 
     document.getElementById('cost-display').textContent = formatCost(input_tokens, output_tokens);
@@ -252,7 +236,7 @@ function renderWorkouts(workouts) {
       <div class="workout-card ${key}" data-type="${key}" data-index="${index}">
         ${isRec ? '<span class="rec-badge">Recommended</span>' : '<span class="alt-badge">Alternative</span>'}
         <div class="workout-type">${w.type}</div>
-        <div class="workout-structure">${w.structure.split('\n').map(s => `<div class="workout-step">${s}</div>`).join('')}</div>
+        <div class="workout-structure">${(Array.isArray(w.structure) ? w.structure : w.structure.split('\n')).map(s => `<div class="workout-step">${s}</div>`).join('')}</div>
         <div class="workout-pace">Target: ${w.target_pace}</div>
         <div class="workout-rationale">${w.rationale}</div>
         <div class="workout-selected-note">✓ Selected for today</div>
@@ -362,11 +346,26 @@ async function openGenerateModal() {
           <span>${preview.run_count}</span>
         </div>
       </div>
+      <div class="soreness-section">
+        <span class="generate-preview-label">Lower body soreness</span>
+        <div class="soreness-toggle">
+          <button class="soreness-btn active" data-value="none">None</button>
+          <button class="soreness-btn" data-value="moderate">Moderate</button>
+          <button class="soreness-btn" data-value="high">High</button>
+        </div>
+      </div>
       <details class="generate-preview-details">
         <summary>Preview prompt</summary>
         <pre class="prompt-preview">${preview.prompt}</pre>
       </details>
     `;
+
+    body.querySelectorAll('.soreness-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        body.querySelectorAll('.soreness-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+      });
+    });
   } catch (err) {
     body.innerHTML = `<div class="state-error">Failed to load preview: ${err.message}</div>`;
   }
@@ -402,7 +401,7 @@ async function openSessionModal(date) {
             ${isSelected ? '<span class="modal-chosen">✓ Chosen</span>' : ''}
           </div>
           <div class="workout-type">${w.type}</div>
-          <div class="workout-structure">${w.structure.split('\n').map(s => `<div class="workout-step">${s}</div>`).join('')}</div>
+          <div class="workout-structure">${(Array.isArray(w.structure) ? w.structure : w.structure.split('\n')).map(s => `<div class="workout-step">${s}</div>`).join('')}</div>
           <div class="workout-pace">Target: ${w.target_pace}</div>
           <div class="workout-rationale">${w.rationale}</div>
         </div>
@@ -445,6 +444,9 @@ async function openSessionModal(date) {
       await fetch(`/api/session/${date}`, { method: 'DELETE' });
       promptLoaded = false;
       if (date === today) {
+        localStorage.removeItem('lastWorkouts');
+        localStorage.removeItem('selectedWorkout');
+        currentWorkouts = null;
         document.getElementById('generate-btn').disabled = false;
         document.getElementById('generate-locked-msg').hidden = true;
         document.getElementById('workouts-section').hidden = true;
@@ -483,21 +485,11 @@ document.getElementById('generate-modal').addEventListener('click', (e) => {
   if (e.target === e.currentTarget) e.currentTarget.hidden = true;
 });
 document.getElementById('generate-modal-confirm').addEventListener('click', () => {
+  const sorenessBtn = document.querySelector('.soreness-btn.active');
+  const soreness = sorenessBtn ? sorenessBtn.dataset.value : 'none';
   document.getElementById('generate-modal').hidden = true;
-  generateWorkout();
+  generateWorkout(soreness);
 });
-
-const saved = localStorage.getItem('lastWorkouts');
-if (saved) {
-  try {
-    const parsed = JSON.parse(saved);
-    if (!parsed.workouts) throw new Error('stale format');
-    currentWorkouts = parsed.workouts;
-    renderWorkouts(currentWorkouts);
-    document.getElementById('workouts-section').hidden = false;
-    document.querySelector('.generate-section').hidden = true;
-  } catch (_) { localStorage.removeItem('lastWorkouts'); }
-}
 
 // ── Prompt preview (used by generate modal) ───────────────────────────────────
 

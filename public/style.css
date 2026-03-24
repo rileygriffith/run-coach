@@ -807,6 +807,43 @@ header {
   font-family: monospace;
 }
 
+.soreness-toggle {
+  display: flex;
+  gap: 2px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 3px;
+}
+
+.soreness-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 5px;
+  font-family: inherit;
+  transition: background 0.15s, color 0.15s;
+}
+
+.soreness-btn.active { background: var(--blue); color: #000; }
+.soreness-btn[data-value="moderate"].active { background: var(--orange); color: #000; }
+.soreness-btn[data-value="high"].active { background: var(--red); color: #fff; }
+
+.soreness-section {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  margin-top: 0.75rem;
+}
+
 .generate-preview-details summary {
   color: var(--text-muted);
   cursor: pointer;

@@ -261,7 +261,7 @@ function buildRunSummary(runs, sessionMap = {}) {
   }).join('\n');
 }
 
-function buildPromptContent(runs, units = 'miles') {
+function buildPromptContent(runs, units = 'miles', soreness = 'none') {
   const goal = getSetting('goal', '');
 
   // Build date → workout structure map from sessions with a selection
@@ -282,19 +282,25 @@ function buildPromptContent(runs, units = 'miles') {
     ? `\n\n━━━ ATHLETE'S CURRENT GOAL ━━━\n${goal}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`
     : '';
 
+  const sorenessSection = soreness !== 'none'
+    ? `\n\nNote: The athlete is reporting ${soreness} lower body soreness today. Adjust workout intensity and type accordingly.`
+    : '';
+
+
   return (
-    `Here are my recent runs:\n${runSummary}${goalSection}\n\n` +
+    `Here are my recent runs:\n${runSummary}${goalSection}${sorenessSection}\n\n` +
     `${unitInstruction} ` +
-    `Based on this training history, generate one recommended workout for my next session, plus two alternatives. ` +
-    `The recommended workout should be the single best option given current fitness, recent load, and stated goal. ` +
-    `The two alternatives should offer variety (e.g. if recommended is a tempo, alternatives might be intervals and an easy run) at roughly the same training load. ` +
+    `Based on this training history, generate one recommended option for the athlete's next session, plus two alternatives. ` +
+    `You are a coach first — if the training load, recovery signals, or reported soreness suggest the athlete needs rest, recommend a rest day (type: "Rest Day", structure: ["Full rest or light walking only"], target_pace: "N/A"). ` +
+    `The recommended option should be the single best choice given current fitness, recent load, soreness, and stated goal. ` +
+    `Alternatives should offer variety at roughly the same training load, and may also include a rest day if warranted. ` +
     `For each workout provide specific, concrete targets — exact paces, distances, rep structures, rest intervals. Be precise, not vague. Keep each rationale to 2 sentences maximum.\n\n` +
     `Respond ONLY with valid JSON in exactly this format:\n` +
     `{\n` +
     `  "recommended": "option_a",\n` +
-    `  "option_a": { "type": "string", "structure": "step 1\\nstep 2\\nstep 3", "target_pace": "string", "rationale": "string" },\n` +
-    `  "option_b": { "type": "string", "structure": "step 1\\nstep 2\\nstep 3", "target_pace": "string", "rationale": "string" },\n` +
-    `  "option_c": { "type": "string", "structure": "step 1\\nstep 2\\nstep 3", "target_pace": "string", "rationale": "string" }\n` +
+    `  "option_a": { "type": "string", "structure": ["step 1", "step 2", "...one string per distinct phase or segment"], "target_pace": "string", "rationale": "max 2 sentences" },\n` +
+    `  "option_b": { "type": "string", "structure": ["step 1", "step 2", "...one string per distinct phase or segment"], "target_pace": "string", "rationale": "max 2 sentences" },\n` +
+    `  "option_c": { "type": "string", "structure": ["step 1", "step 2", "...one string per distinct phase or segment"], "target_pace": "string", "rationale": "max 2 sentences" }\n` +
     `}`
   );
 }
@@ -372,12 +378,12 @@ app.post('/api/generate-workout', async (req, res) => {
     const runs = await getActivities();
     if (!runs.length) return res.status(400).json({ error: 'No runs found on Strava.' });
 
-    const { units = 'miles' } = req.body || {};
+    const { units = 'miles', soreness = 'none' } = req.body || {};
     const message = await anthropic.messages.create({
       model:      'claude-sonnet-4-6',
       max_tokens: 1024,
       system:     COACHING_PROMPT,
-      messages:   [{ role: 'user', content: buildPromptContent(runs, units) }],
+      messages:   [{ role: 'user', content: buildPromptContent(runs, units, soreness) }],
     });
 
     const text      = message.content[0].text;
