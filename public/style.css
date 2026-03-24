@@ -447,6 +447,21 @@ header {
   font-size: 0.85rem;
   color: var(--text-muted);
   margin-bottom: 0.6rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.workout-step {
+  padding-left: 0.875rem;
+  position: relative;
+}
+
+.workout-step::before {
+  content: '–';
+  position: absolute;
+  left: 0;
+  color: var(--text-muted);
 }
 
 .workout-pace {
@@ -751,6 +766,53 @@ header {
   font-size: 0.8rem;
   color: var(--text-muted);
   margin-top: 0.25rem;
+}
+
+.cost-estimate-msg {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  font-family: monospace;
+  margin-top: 0.25rem;
+}
+
+/* ── Generate confirm modal ──────────────────────────────────────────────────── */
+.generate-preview-meta {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.875rem 1rem;
+  margin-bottom: 1rem;
+}
+
+.generate-preview-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.85rem;
+  padding: 0.3rem 0;
+}
+
+.generate-preview-row + .generate-preview-row {
+  border-top: 1px solid var(--border);
+}
+
+.generate-preview-label {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+}
+
+.generate-preview-cost {
+  color: var(--green);
+  font-weight: 600;
+  font-family: monospace;
+}
+
+.generate-preview-details summary {
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.78rem;
+  margin-bottom: 0.5rem;
+  user-select: none;
 }
 
 /* ── State messages ──────────────────────────────────────────────────────────── */

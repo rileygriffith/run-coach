@@ -11,6 +11,8 @@ const db = new Database(path.join(__dirname, 'coach.db'));
 // Add workout_type column to existing DBs that predate this migration
 try { db.exec('ALTER TABLE runs ADD COLUMN workout_type TEXT'); } catch (_) {}
 try { db.exec('ALTER TABLE workout_sessions ADD COLUMN recommended TEXT'); } catch (_) {}
+try { db.exec('ALTER TABLE workout_sessions ADD COLUMN input_tokens INTEGER'); } catch (_) {}
+try { db.exec('ALTER TABLE workout_sessions ADD COLUMN output_tokens INTEGER'); } catch (_) {}
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS runs (
@@ -286,13 +288,13 @@ function buildPromptContent(runs, units = 'miles') {
     `Based on this training history, generate one recommended workout for my next session, plus two alternatives. ` +
     `The recommended workout should be the single best option given current fitness, recent load, and stated goal. ` +
     `The two alternatives should offer variety (e.g. if recommended is a tempo, alternatives might be intervals and an easy run) at roughly the same training load. ` +
-    `For each workout provide specific, concrete targets — exact paces, distances, rep structures, rest intervals. Be precise, not vague.\n\n` +
+    `For each workout provide specific, concrete targets — exact paces, distances, rep structures, rest intervals. Be precise, not vague. Keep each rationale to 2 sentences maximum.\n\n` +
     `Respond ONLY with valid JSON in exactly this format:\n` +
     `{\n` +
     `  "recommended": "option_a",\n` +
-    `  "option_a": { "type": "string", "structure": "string", "target_pace": "string", "rationale": "string" },\n` +
-    `  "option_b": { "type": "string", "structure": "string", "target_pace": "string", "rationale": "string" },\n` +
-    `  "option_c": { "type": "string", "structure": "string", "target_pace": "string", "rationale": "string" }\n` +
+    `  "option_a": { "type": "string", "structure": "step 1\\nstep 2\\nstep 3", "target_pace": "string", "rationale": "string" },\n` +
+    `  "option_b": { "type": "string", "structure": "step 1\\nstep 2\\nstep 3", "target_pace": "string", "rationale": "string" },\n` +
+    `  "option_c": { "type": "string", "structure": "step 1\\nstep 2\\nstep 3", "target_pace": "string", "rationale": "string" }\n` +
     `}`
   );
 }
@@ -322,6 +324,26 @@ app.get('/api/activities', async (_req, res) => {
     res.json(await getActivities());
   } catch (err) {
     console.error('[/api/activities]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Cost estimate ──────────────────────────────────────────────────────────────
+
+app.post('/api/cost-estimate', async (req, res) => {
+  try {
+    const runs = await getActivities();
+    const { units = 'miles' } = req.body || {};
+    const promptContent = buildPromptContent(runs, units);
+    const { input_tokens } = await anthropic.messages.countTokens({
+      model: 'claude-sonnet-4-6',
+      system: COACHING_PROMPT,
+      messages: [{ role: 'user', content: promptContent }],
+    });
+    const estimatedOutput = 400;
+    const cost = (input_tokens / 1_000_000) * 3 + (estimatedOutput / 1_000_000) * 15;
+    res.json({ input_tokens, estimated_output_tokens: estimatedOutput, cost });
+  } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
@@ -368,9 +390,9 @@ app.post('/api/generate-workout', async (req, res) => {
 
     const today = localDateStr();
     db.prepare(`
-      INSERT OR REPLACE INTO workout_sessions (date, option_a, option_b, option_c, recommended, selected, created_at)
-      VALUES (?, ?, ?, ?, ?, NULL, ?)
-    `).run(today, JSON.stringify(workouts.option_a), JSON.stringify(workouts.option_b), JSON.stringify(workouts.option_c), workouts.recommended || 'option_a', new Date().toISOString());
+      INSERT OR REPLACE INTO workout_sessions (date, option_a, option_b, option_c, recommended, selected, input_tokens, output_tokens, created_at)
+      VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?)
+    `).run(today, JSON.stringify(workouts.option_a), JSON.stringify(workouts.option_b), JSON.stringify(workouts.option_c), workouts.recommended || 'option_a', input_tokens, output_tokens, new Date().toISOString());
 
     res.json({ workouts, cost, input_tokens, output_tokens });
   } catch (err) {
@@ -394,6 +416,8 @@ app.get('/api/today-session', (_req, res) => {
       option_c: JSON.parse(session.option_c),
       recommended: session.recommended || 'option_a',
       selected: session.selected,
+      input_tokens: session.input_tokens,
+      output_tokens: session.output_tokens,
     },
     run_completed_today: !!todayRun,
   });
@@ -433,7 +457,10 @@ app.get('/api/session/:date', (req, res) => {
     option_a: JSON.parse(session.option_a),
     option_b: JSON.parse(session.option_b),
     option_c: JSON.parse(session.option_c),
+    recommended: session.recommended || 'option_a',
     selected: session.selected,
+    input_tokens: session.input_tokens,
+    output_tokens: session.output_tokens,
   });
 });
 

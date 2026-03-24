@@ -112,6 +112,12 @@ function formatElapsed(seconds) {
   return `${m}m ${s}s`;
 }
 
+function formatCost(input_tokens, output_tokens) {
+  if (!input_tokens) return null;
+  const cost = (input_tokens / 1_000_000) * 3 + (output_tokens / 1_000_000) * 15;
+  return `$${cost.toFixed(4)} · ${input_tokens.toLocaleString()} in / ${output_tokens} out`;
+}
+
 // ── State ─────────────────────────────────────────────────────────────────────
 
 let allRuns = [];
@@ -207,7 +213,7 @@ async function generateWorkout() {
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Unknown error');
 
-    const { workouts, cost, input_tokens, output_tokens } = data;
+    const { workouts, input_tokens, output_tokens } = data;
     currentWorkouts = workouts;
     localStorage.setItem('lastWorkouts', JSON.stringify({
       workouts,
@@ -215,12 +221,14 @@ async function generateWorkout() {
     }));
     renderWorkouts(workouts);
 
-    document.getElementById('cost-display').textContent =
-      `$${cost.toFixed(4)} · ${input_tokens} in / ${output_tokens} out`;
+    document.getElementById('cost-display').textContent = formatCost(input_tokens, output_tokens);
     document.getElementById('cost-display').hidden = false;
 
+    document.querySelector('.generate-section').hidden = true;
     document.getElementById('workouts-section').hidden = false;
     document.getElementById('workouts-section').scrollIntoView({ behavior: 'smooth' });
+    await renderCalendar(allRuns);
+    await checkTodaySession();
   } catch (err) {
     alert('Failed to generate workout: ' + err.message);
   } finally {
@@ -244,7 +252,7 @@ function renderWorkouts(workouts) {
       <div class="workout-card ${key}" data-type="${key}" data-index="${index}">
         ${isRec ? '<span class="rec-badge">Recommended</span>' : '<span class="alt-badge">Alternative</span>'}
         <div class="workout-type">${w.type}</div>
-        <div class="workout-structure">${w.structure}</div>
+        <div class="workout-structure">${w.structure.split('\n').map(s => `<div class="workout-step">${s}</div>`).join('')}</div>
         <div class="workout-pace">Target: ${w.target_pace}</div>
         <div class="workout-rationale">${w.rationale}</div>
         <div class="workout-selected-note">✓ Selected for today</div>
@@ -280,12 +288,6 @@ function renderWorkouts(workouts) {
   grid.querySelectorAll('.workout-card').forEach((card) => {
     card.addEventListener('click', () => selectWorkout(card.dataset.type));
   });
-
-  const prev = localStorage.getItem('selectedWorkout');
-  if (prev) {
-    const prevCard = grid.querySelector(`[data-type="${prev}"]`);
-    if (prevCard) prevCard.classList.add('selected');
-  }
 }
 
 // ── Select workout ────────────────────────────────────────────────────────────
@@ -319,6 +321,57 @@ async function selectWorkout(type) {
   document.getElementById('unresolved-banner').hidden = true;
 }
 
+// ── Generate confirm modal ────────────────────────────────────────────────────
+
+async function openGenerateModal() {
+  const modal = document.getElementById('generate-modal');
+  const body  = document.getElementById('generate-modal-body');
+  const units = useImperial ? 'miles' : 'km';
+
+  body.innerHTML = '<div class="state-msg">Loading…</div>';
+  modal.hidden = false;
+
+  try {
+    const [estimateRes, previewRes] = await Promise.all([
+      fetch('/api/cost-estimate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ units }) }),
+      fetch('/api/prompt-preview', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ units }) }),
+    ]);
+    const estimate = await estimateRes.json();
+    const preview  = await previewRes.json();
+
+    body.innerHTML = `
+      <div class="generate-preview-meta">
+        <div class="generate-preview-row">
+          <span class="generate-preview-label">Model</span>
+          <span>claude-sonnet-4-6</span>
+        </div>
+        <div class="generate-preview-row">
+          <span class="generate-preview-label">Input tokens</span>
+          <span>${estimate.input_tokens.toLocaleString()}</span>
+        </div>
+        <div class="generate-preview-row">
+          <span class="generate-preview-label">Est. output tokens</span>
+          <span>~${estimate.estimated_output_tokens}</span>
+        </div>
+        <div class="generate-preview-row">
+          <span class="generate-preview-label">Est. cost</span>
+          <span class="generate-preview-cost">~$${estimate.cost.toFixed(4)}</span>
+        </div>
+        <div class="generate-preview-row">
+          <span class="generate-preview-label">Runs in prompt</span>
+          <span>${preview.run_count}</span>
+        </div>
+      </div>
+      <details class="generate-preview-details">
+        <summary>Preview prompt</summary>
+        <pre class="prompt-preview">${preview.prompt}</pre>
+      </details>
+    `;
+  } catch (err) {
+    body.innerHTML = `<div class="state-error">Failed to load preview: ${err.message}</div>`;
+  }
+}
+
 // ── Session modal ─────────────────────────────────────────────────────────────
 
 async function openSessionModal(date) {
@@ -333,24 +386,23 @@ async function openSessionModal(date) {
   try {
     const res = await fetch(`/api/session/${date}`);
     const data = await res.json();
-    const options = [
-      { key: 'option_a', label: 'Option A' },
-      { key: 'option_b', label: 'Option B' },
-      { key: 'option_c', label: 'Option C' },
-    ];
+    const options = ['option_a', 'option_b', 'option_c'].map(key => ({ key }));
 
     const noneChosen = data.selected === 'none';
-    body.innerHTML = options.map(({ key, label }) => {
+    body.innerHTML = options.map(({ key }) => {
       const w = data[key];
       const isSelected = data.selected === key;
+      const isRec = key === data.recommended;
       return `
         <div class="modal-workout ${isSelected ? 'modal-workout-selected' : ''} modal-workout-selectable" data-key="${key}">
           <div class="modal-workout-header">
-            <span class="badge">${label}</span>
+            ${isRec
+              ? '<span class="rec-badge">Recommended</span>'
+              : '<span class="alt-badge">Alternative</span>'}
             ${isSelected ? '<span class="modal-chosen">✓ Chosen</span>' : ''}
           </div>
           <div class="workout-type">${w.type}</div>
-          <div class="workout-structure">${w.structure}</div>
+          <div class="workout-structure">${w.structure.split('\n').map(s => `<div class="workout-step">${s}</div>`).join('')}</div>
           <div class="workout-pace">Target: ${w.target_pace}</div>
           <div class="workout-rationale">${w.rationale}</div>
         </div>
@@ -419,7 +471,21 @@ document.getElementById('session-modal').addEventListener('click', (e) => {
 const todayLabel = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric' });
 document.getElementById('btn-text').textContent = `Generate Workout for ${todayLabel}`;
 
-document.getElementById('generate-btn').addEventListener('click', generateWorkout);
+document.getElementById('generate-btn').addEventListener('click', openGenerateModal);
+
+document.getElementById('generate-modal-close').addEventListener('click', () => {
+  document.getElementById('generate-modal').hidden = true;
+});
+document.getElementById('generate-modal-cancel').addEventListener('click', () => {
+  document.getElementById('generate-modal').hidden = true;
+});
+document.getElementById('generate-modal').addEventListener('click', (e) => {
+  if (e.target === e.currentTarget) e.currentTarget.hidden = true;
+});
+document.getElementById('generate-modal-confirm').addEventListener('click', () => {
+  document.getElementById('generate-modal').hidden = true;
+  generateWorkout();
+});
 
 const saved = localStorage.getItem('lastWorkouts');
 if (saved) {
@@ -433,39 +499,9 @@ if (saved) {
   } catch (_) { localStorage.removeItem('lastWorkouts'); }
 }
 
-// ── Prompt preview ────────────────────────────────────────────────────────────
+// ── Prompt preview (used by generate modal) ───────────────────────────────────
 
-const promptPreviewBtn = document.getElementById('prompt-preview-btn');
-const promptPreviewEl  = document.getElementById('prompt-preview');
 let promptLoaded = false;
-
-promptPreviewBtn.addEventListener('click', async () => {
-  const open = !promptPreviewEl.hidden;
-  if (open) {
-    promptPreviewEl.hidden = true;
-    promptPreviewBtn.textContent = '▶ Preview prompt';
-    return;
-  }
-  promptPreviewBtn.textContent = '▼ Preview prompt';
-  if (!promptLoaded) {
-    promptPreviewEl.textContent = 'Loading…';
-    promptPreviewEl.hidden = false;
-    try {
-      const res = await fetch('/api/prompt-preview', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ units: useImperial ? 'miles' : 'km' }),
-      });
-      const data = await res.json();
-      promptPreviewEl.textContent = data.prompt;
-      promptLoaded = true;
-    } catch (err) {
-      promptPreviewEl.textContent = 'Failed to load preview: ' + err.message;
-    }
-  } else {
-    promptPreviewEl.hidden = false;
-  }
-});
 
 // ── Settings ──────────────────────────────────────────────────────────────────
 
@@ -536,9 +572,16 @@ async function checkTodaySession() {
       localStorage.setItem('selectedWorkout', data.session.selected);
     }
 
-    // Lock generate button once a selection exists for today
+    // Show generation cost if available
+    const costStr = formatCost(data.session.input_tokens, data.session.output_tokens);
+    if (costStr) {
+      document.getElementById('cost-display').textContent = costStr;
+      document.getElementById('cost-display').hidden = false;
+    }
+
+    // Session exists — disable generate regardless of whether a workout was selected yet
+    document.getElementById('generate-btn').disabled = true;
     if (data.session.selected) {
-      document.getElementById('generate-btn').disabled = true;
       document.getElementById('generate-locked-msg').hidden = false;
     }
 
@@ -550,5 +593,4 @@ async function checkTodaySession() {
 }
 
 loadSettings();
-loadActivities();
-checkTodaySession();
+loadActivities().then(checkTodaySession);
