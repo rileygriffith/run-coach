@@ -48,6 +48,9 @@
         <span id="btn-text"></span>
         <span id="btn-loading" hidden>Analyzing your training…</span>
       </button>
+      <p id="generate-locked-msg" class="generate-locked-msg" hidden>
+        Workout already generated for today — view or change your selection in the calendar below.
+      </p>
       <div class="prompt-preview-wrap">
         <button id="prompt-preview-btn" class="prompt-preview-toggle">▶ Preview prompt</button>
         <pre id="prompt-preview" class="prompt-preview" hidden></pre>
@@ -89,6 +92,7 @@
         <button id="session-modal-close" class="modal-close">✕</button>
       </div>
       <div id="session-modal-body" class="modal-body"></div>
+      <div id="session-modal-footer" class="modal-footer"></div>
     </div>
   </div>
 

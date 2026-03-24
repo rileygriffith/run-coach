@@ -437,6 +437,17 @@ app.get('/api/session/:date', (req, res) => {
   });
 });
 
+// ── Delete session ─────────────────────────────────────────────────────────────
+
+app.delete('/api/session/:date', (req, res) => {
+  const { date } = req.params;
+  // Also clear the workout_type from any runs on that date
+  db.prepare("UPDATE runs SET workout_type = NULL WHERE date LIKE ?").run(`${date}%`);
+  const result = db.prepare('DELETE FROM workout_sessions WHERE date = ?').run(date);
+  if (result.changes === 0) return res.status(404).json({ error: 'No session for that date' });
+  res.json({ ok: true });
+});
+
 // ── Unresolved sessions (run completed but no workout selected) ────────────────
 
 app.get('/api/unresolved-sessions', (_req, res) => {

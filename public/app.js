@@ -294,6 +294,7 @@ async function selectWorkout(type) {
 
   promptLoaded = false;
   document.getElementById('generate-btn').disabled = true;
+  document.getElementById('generate-locked-msg').hidden = false;
   document.getElementById('unresolved-banner').hidden = true;
 }
 
@@ -317,6 +318,7 @@ async function openSessionModal(date) {
       { key: 'option_c', label: 'Option C' },
     ];
 
+    const noneChosen = data.selected === 'none';
     body.innerHTML = options.map(({ key, label }) => {
       const w = data[key];
       const isSelected = data.selected === key;
@@ -333,7 +335,9 @@ async function openSessionModal(date) {
         </div>
       `;
     }).join('') + `
-      <button id="modal-none-btn" class="modal-none-btn">None of the above — did something else</button>
+      <button id="modal-none-btn" class="modal-none-btn ${noneChosen ? 'modal-none-chosen' : ''}" data-key="none">
+        ${noneChosen ? '✓ Did something else' : 'None of the above — did something else'}
+      </button>
     `;
 
     body.querySelectorAll('.modal-workout-selectable').forEach((card) => {
@@ -343,8 +347,38 @@ async function openSessionModal(date) {
       });
     });
     document.getElementById('modal-none-btn').addEventListener('click', async () => {
+      if (noneChosen) return; // already selected, no-op
       await selectWorkoutForDate('none', date);
       modal.hidden = true;
+    });
+
+    // Action footer (outside scrollable body)
+    const today = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}-${String(new Date().getDate()).padStart(2, '0')}`;
+    const footer = document.getElementById('session-modal-footer');
+    footer.innerHTML = `
+      ${date === today ? '<button class="modal-action-btn modal-regenerate-btn">↺ Regenerate</button>' : ''}
+      <button class="modal-action-btn modal-delete-btn">Delete session</button>
+    `;
+
+    if (date === today) {
+      footer.querySelector('.modal-regenerate-btn').addEventListener('click', async () => {
+        modal.hidden = true;
+        await generateWorkout();
+        renderCalendar(allRuns);
+      });
+    }
+    footer.querySelector('.modal-delete-btn').addEventListener('click', async () => {
+      if (!confirm('Delete this session? This cannot be undone.')) return;
+      await fetch(`/api/session/${date}`, { method: 'DELETE' });
+      promptLoaded = false;
+      if (date === today) {
+        document.getElementById('generate-btn').disabled = false;
+        document.getElementById('generate-locked-msg').hidden = true;
+        document.getElementById('workouts-section').hidden = true;
+        document.querySelector('.generate-section').hidden = false;
+      }
+      modal.hidden = true;
+      renderCalendar(allRuns);
     });
   } catch (err) {
     body.innerHTML = `<div class="state-error">${err.message}</div>`;
@@ -484,6 +518,7 @@ async function checkTodaySession() {
     // Lock generate button once a selection exists for today
     if (data.session.selected) {
       document.getElementById('generate-btn').disabled = true;
+      document.getElementById('generate-locked-msg').hidden = false;
     }
 
     // If a run was completed today but no selection made, show top banner
