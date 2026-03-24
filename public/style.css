@@ -345,16 +345,50 @@ header {
 .generate-btn:active:not(:disabled) { transform: translateY(0); }
 .generate-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
-/* ── Workout option cards ────────────────────────────────────────────────────── */
-.workouts-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
-  gap: 1rem;
+/* ── Workout carousel ────────────────────────────────────────────────────────── */
+.workouts-grid {}
+
+.carousel {
+  display: flex;
+  align-items: stretch;
+  gap: 0.75rem;
 }
 
-@media (max-width: 720px) {
-  .workouts-grid { grid-template-columns: 1fr; }
+.carousel-track {
+  flex: 1;
+  position: relative;
 }
+
+.carousel-btn {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 1.1rem;
+  padding: 0 0.75rem;
+  transition: color 0.15s, border-color 0.15s;
+  flex-shrink: 0;
+}
+
+.carousel-btn:hover { color: var(--text); border-color: var(--text-muted); }
+
+.carousel-dots {
+  display: flex;
+  gap: 6px;
+  justify-content: center;
+  margin-top: 0.875rem;
+}
+
+.carousel-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--border);
+  transition: background 0.15s;
+}
+
+.carousel-dot.active { background: var(--blue); }
 
 .workout-card {
   background: var(--surface);
@@ -364,7 +398,10 @@ header {
   cursor: pointer;
   transition: border-color 0.15s, transform 0.1s, background 0.15s;
   user-select: none;
+  display: none;
 }
+
+.workout-card.carousel-active { display: block; }
 
 .workout-card:hover { transform: translateY(-2px); }
 .workout-card:active { transform: translateY(0); }
@@ -385,7 +422,7 @@ header {
 .workout-card.option_b { border-color: var(--blue); }
 .workout-card.option_c { border-color: var(--blue); }
 
-.badge {
+.rec-badge, .alt-badge {
   display: inline-block;
   font-size: 0.65rem;
   font-weight: 700;
@@ -396,9 +433,8 @@ header {
   margin-bottom: 1rem;
 }
 
-.option_a .badge,
-.option_b .badge,
-.option_c .badge { background: rgba(96,165,250,0.12); color: var(--blue); }
+.rec-badge { background: rgba(74,222,128,0.12); color: var(--green); }
+.alt-badge { background: rgba(96,165,250,0.12); color: var(--blue); }
 
 .workout-type {
   font-size: 1.05rem;

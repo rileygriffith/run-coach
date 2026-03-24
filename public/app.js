@@ -232,19 +232,17 @@ async function generateWorkout() {
 
 function renderWorkouts(workouts) {
   const grid = document.getElementById('workouts-grid');
+  const recommended = workouts.recommended || 'option_a';
+  const order = [recommended, ...['option_a', 'option_b', 'option_c'].filter(k => k !== recommended)];
+  let current = 0;
 
-  const options = [
-    { key: 'option_a', label: 'Option A' },
-    { key: 'option_b', label: 'Option B' },
-    { key: 'option_c', label: 'Option C' },
-  ];
-
-  grid.innerHTML = options.map(({ key, label }) => {
+  function cardHTML(key, index) {
     const w = workouts[key];
     if (!w) return '';
+    const isRec = key === recommended;
     return `
-      <div class="workout-card ${key}" data-type="${key}">
-        <span class="badge">${label}</span>
+      <div class="workout-card ${key}" data-type="${key}" data-index="${index}">
+        ${isRec ? '<span class="rec-badge">Recommended</span>' : '<span class="alt-badge">Alternative</span>'}
         <div class="workout-type">${w.type}</div>
         <div class="workout-structure">${w.structure}</div>
         <div class="workout-pace">Target: ${w.target_pace}</div>
@@ -252,17 +250,40 @@ function renderWorkouts(workouts) {
         <div class="workout-selected-note">✓ Selected for today</div>
       </div>
     `;
-  }).join('');
+  }
 
-  // Attach click handlers
+  grid.innerHTML = `
+    <div class="carousel">
+      <button class="carousel-btn carousel-prev" id="carousel-prev">&#8592;</button>
+      <div class="carousel-track" id="carousel-track">
+        ${order.map((key, i) => cardHTML(key, i)).join('')}
+      </div>
+      <button class="carousel-btn carousel-next" id="carousel-next">&#8594;</button>
+    </div>
+    <div class="carousel-dots" id="carousel-dots">
+      ${order.map((_, i) => `<span class="carousel-dot${i === 0 ? ' active' : ''}"></span>`).join('')}
+    </div>
+  `;
+
+  function goTo(index) {
+    current = index;
+    const cards = grid.querySelectorAll('.workout-card');
+    cards.forEach((c, i) => c.classList.toggle('carousel-active', i === current));
+    grid.querySelectorAll('.carousel-dot').forEach((d, i) => d.classList.toggle('active', i === current));
+  }
+
+  document.getElementById('carousel-prev').addEventListener('click', () => goTo((current - 1 + order.length) % order.length));
+  document.getElementById('carousel-next').addEventListener('click', () => goTo((current + 1) % order.length));
+
+  goTo(0);
+
   grid.querySelectorAll('.workout-card').forEach((card) => {
     card.addEventListener('click', () => selectWorkout(card.dataset.type));
   });
 
-  // Restore previous selection
   const prev = localStorage.getItem('selectedWorkout');
   if (prev) {
-    const prevCard = document.querySelector(`[data-type="${prev}"]`);
+    const prevCard = grid.querySelector(`[data-type="${prev}"]`);
     if (prevCard) prevCard.classList.add('selected');
   }
 }
