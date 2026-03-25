@@ -373,6 +373,7 @@ async function openGenerateModal() {
           <span>${preview.run_count}</span>
         </div>
       </div>
+      ${targetDate === localDateStr() ? `
       <div class="soreness-section">
         <span class="generate-preview-label">Lower body soreness</span>
         <div class="soreness-toggle">
@@ -380,7 +381,7 @@ async function openGenerateModal() {
           <button class="soreness-btn" data-value="moderate">Moderate</button>
           <button class="soreness-btn" data-value="high">High</button>
         </div>
-      </div>
+      </div>` : ''}
       <details class="generate-preview-details">
         <summary>Preview prompt</summary>
         <pre class="prompt-preview">${preview.prompt}</pre>
