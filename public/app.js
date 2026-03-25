@@ -530,8 +530,10 @@ let promptLoaded = false;
 
 const settingsPanel = document.getElementById('settings-panel');
 
-document.getElementById('settings-btn').addEventListener('click', () => {
+const settingsBtn = document.getElementById('settings-btn');
+settingsBtn.addEventListener('click', () => {
   settingsPanel.hidden = !settingsPanel.hidden;
+  settingsBtn.classList.toggle('active', !settingsPanel.hidden);
 });
 
 async function saveSetting(key, value) {

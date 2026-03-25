@@ -66,6 +66,7 @@ header {
 }
 
 .settings-btn:hover { color: var(--text); border-color: var(--text-muted); }
+.settings-btn.active { color: var(--accent); border-color: var(--accent); }
 
 .settings-panel {
   background: var(--surface);
