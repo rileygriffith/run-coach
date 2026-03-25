@@ -82,12 +82,14 @@ header {
 .settings-group:last-child { margin-bottom: 0; padding-bottom: 0; border-bottom: none; }
 
 .settings-group-label {
-  font-size: 0.7rem;
+  font-size: 0.78rem;
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.1em;
-  color: var(--text-muted);
-  margin-bottom: 1rem;
+  letter-spacing: 0.08em;
+  color: var(--text);
+  margin-bottom: 1.25rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--border);
 }
 
 .settings-field { margin-bottom: 1rem; }
