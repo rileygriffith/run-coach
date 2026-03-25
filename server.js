@@ -276,7 +276,7 @@ function buildRunSummary(runs, sessionMap = {}) {
   }).join('\n');
 }
 
-function buildPromptContent(runs, units = 'miles', soreness = 'none') {
+function buildPromptContent(runs, units = 'miles', soreness = 'none', targetDate = null) {
   const goal = getSetting('goal', '');
 
   // Build date → workout structure map from sessions with a selection
@@ -315,9 +315,16 @@ function buildPromptContent(runs, units = 'miles', soreness = 'none') {
   const sorenessSection = soreness !== 'none'
     ? `\n\nNote: The athlete is reporting ${soreness} lower body soreness today. Adjust workout intensity and type accordingly.`
     : '';
+  const today = localDateStr();
+  const daysAhead = targetDate && targetDate > today
+    ? Math.round((new Date(targetDate) - new Date(today)) / 86400000)
+    : 0;
+  const futureDateSection = daysAhead > 0
+    ? `\n\nNote: This workout is being planned ${daysAhead} day${daysAhead > 1 ? 's' : ''} in advance (for ${targetDate}). The athlete will have had time to recover from any recent fatigue — do not recommend rest based solely on recent training load.`
+    : '';
 
   return (
-    `Here are my recent runs:\n${runSummary}${goalSection}${raceSection}${crossTrainingSection}${injurySection}${sorenessSection}\n\n` +
+    `Here are my recent runs:\n${runSummary}${goalSection}${raceSection}${crossTrainingSection}${injurySection}${sorenessSection}${futureDateSection}\n\n` +
     `${unitInstruction} ` +
     `Based on this training history, generate one recommended option for the athlete's next session, plus two alternatives. ` +
     `You are a coach first — if the training load, recovery signals, or reported soreness suggest the athlete needs rest, recommend a rest day (type: "Rest Day", structure: ["Full rest or light walking only"], target_pace: "N/A"). ` +
@@ -392,8 +399,8 @@ app.get('/api/activities', async (_req, res) => {
 app.post('/api/cost-estimate', async (req, res) => {
   try {
     const runs = await getActivities();
-    const { units = 'miles' } = req.body || {};
-    const promptContent = buildPromptContent(runs, units);
+    const { units = 'miles', date } = req.body || {};
+    const promptContent = buildPromptContent(runs, units, 'none', date || localDateStr());
     const { input_tokens } = await getAnthropicClient().messages.countTokens({
       model: 'claude-sonnet-4-6',
       system: COACHING_PROMPT,
@@ -412,9 +419,9 @@ app.post('/api/cost-estimate', async (req, res) => {
 app.post('/api/prompt-preview', async (req, res) => {
   try {
     const runs = await getActivities();
-    const { units = 'miles' } = req.body || {};
+    const { units = 'miles', date } = req.body || {};
     const systemPrompt = COACHING_PROMPT;
-    const userContent = buildPromptContent(runs, units);
+    const userContent = buildPromptContent(runs, units, 'none', date || localDateStr());
     res.json({
       prompt: `[System prompt]\n${systemPrompt}\n\n[User message]\n${userContent}`,
       run_count: runs.length,
@@ -436,7 +443,7 @@ app.post('/api/generate-workout', async (req, res) => {
       model:      'claude-sonnet-4-6',
       max_tokens: 1024,
       system:     COACHING_PROMPT,
-      messages:   [{ role: 'user', content: buildPromptContent(runs, units, soreness) }],
+      messages:   [{ role: 'user', content: buildPromptContent(runs, units, soreness, sessionDate) }],
     });
 
     const text      = message.content[0].text;

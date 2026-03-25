@@ -344,8 +344,8 @@ async function openGenerateModal() {
 
   try {
     const [estimateRes, previewRes] = await Promise.all([
-      fetch('/api/cost-estimate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ units }) }),
-      fetch('/api/prompt-preview', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ units }) }),
+      fetch('/api/cost-estimate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ units, date: targetDate }) }),
+      fetch('/api/prompt-preview', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ units, date: targetDate }) }),
     ]);
     const estimate = await estimateRes.json();
     const preview  = await previewRes.json();
