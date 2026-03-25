@@ -927,31 +927,24 @@ header {
   font-family: monospace;
 }
 
-.soreness-toggle {
-  display: flex;
-  gap: 2px;
-  background: var(--surface);
+.soreness-toggle-btn {
+  background: var(--surface-3);
   border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 3px;
-}
-
-.soreness-btn {
-  background: transparent;
-  border: none;
   color: var(--text-muted);
   cursor: pointer;
   font-size: 0.8rem;
   font-weight: 600;
-  padding: 4px 10px;
+  padding: 4px 14px;
   border-radius: 5px;
   font-family: inherit;
-  transition: background 0.15s, color 0.15s;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
 }
 
-.soreness-btn.active { background: var(--blue); color: #000; }
-.soreness-btn[data-value="moderate"].active { background: var(--orange); color: #000; }
-.soreness-btn[data-value="high"].active { background: var(--red); color: #fff; }
+.soreness-toggle-btn.active {
+  background: var(--orange);
+  border-color: var(--orange);
+  color: #000;
+}
 
 .soreness-section {
   display: flex;
@@ -962,6 +955,57 @@ header {
   border-radius: 8px;
   padding: 0.75rem 1rem;
   margin-top: 0.75rem;
+}
+
+/* ── Workout result picker ──────────────────────────────────────────────────── */
+
+.result-picker {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  margin-top: 0.75rem;
+}
+
+.result-picker-label {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+  margin-right: 0.75rem;
+}
+
+.result-toggle {
+  display: flex;
+  gap: 2px;
+  background: var(--surface-3);
+  border-radius: 6px;
+  padding: 2px;
+}
+
+.result-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.78rem;
+  padding: 0.3rem 0.65rem;
+  border-radius: 4px;
+  transition: background 0.15s, color 0.15s;
+}
+
+.result-btn:hover { background: var(--surface-1); color: var(--text); }
+.result-btn.hit.active    { background: #166534; color: #bbf7d0; }
+.result-btn.partial.active { background: #92400e; color: #fde68a; }
+.result-btn.missed.active  { background: #7f1d1d; color: #fecaca; }
+
+/* In session modal */
+#modal-result-section {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
 }
 
 .generate-preview-details summary {

@@ -15,6 +15,7 @@ try { db.exec('ALTER TABLE runs ADD COLUMN workout_type TEXT'); } catch (_) {}
 try { db.exec('ALTER TABLE workout_sessions ADD COLUMN recommended TEXT'); } catch (_) {}
 try { db.exec('ALTER TABLE workout_sessions ADD COLUMN input_tokens INTEGER'); } catch (_) {}
 try { db.exec('ALTER TABLE workout_sessions ADD COLUMN output_tokens INTEGER'); } catch (_) {}
+try { db.exec('ALTER TABLE workout_sessions ADD COLUMN result TEXT'); } catch (_) {}
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS runs (
@@ -264,6 +265,11 @@ function buildRunSummary(runs, sessionMap = {}) {
       ? `${mins}:${String(secs).padStart(2, '0')} min/mi`
       : 'N/A';
     const date = new Date(r.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    const entry = sessionMap[r.date.slice(0, 10)];
+    const resultStr = entry?.result === 'hit'     ? ' — hit targets'
+                    : entry?.result === 'partial'  ? ' — hit some targets'
+                    : entry?.result === 'missed'   ? ' — missed targets'
+                    : '';
     return (
       `- ${date}: ${distMi}mi, pace ${pace}` +
       `, HR ${r.average_heartrate ? Math.round(r.average_heartrate) + ' bpm' : 'N/A'}` +
@@ -271,21 +277,23 @@ function buildRunSummary(runs, sessionMap = {}) {
       `, power ${r.average_watts ? Math.round(r.average_watts) + 'W' : 'N/A'}` +
       `, elevation gain ${Math.round(r.total_elevation_gain || 0)}ft` +
       `, elapsed ${Math.floor(r.elapsed_time / 60)}m${r.elapsed_time % 60}s` +
-      (sessionMap[r.date.slice(0, 10)] ? `, workout: ${sessionMap[r.date.slice(0, 10)]}` : '')
+      (entry ? `, workout: ${entry.structure}${resultStr}` : '')
     );
   }).join('\n');
 }
 
-function buildPromptContent(runs, units = 'miles', soreness = 'none', targetDate = null) {
+function buildPromptContent(runs, units = 'miles', soreness = 'none', targetDate = null, clientToday = null) {
   const goal = getSetting('goal', '');
 
-  // Build date → workout structure map from sessions with a selection
-  const sessions = db.prepare('SELECT date, option_a, option_b, option_c, recommended, selected FROM workout_sessions').all();
+  // Build date → workout entry map from sessions with a selection
+  const sessions = db.prepare('SELECT date, option_a, option_b, option_c, recommended, selected, result FROM workout_sessions').all();
   const sessionMap = {};
   for (const s of sessions) {
     const key = s.selected || s.recommended;
     if (key && s[key]) {
-      try { sessionMap[s.date] = JSON.parse(s[key]).structure; } catch (_) {}
+      try {
+        sessionMap[s.date] = { structure: JSON.parse(s[key]).structure, result: s.result };
+      } catch (_) {}
     }
   }
 
@@ -312,10 +320,12 @@ function buildPromptContent(runs, units = 'miles', soreness = 'none', targetDate
   const injurySection = injuryNotes
     ? `\n\n━━━ INJURY / HEALTH NOTES ━━━\n${injuryNotes}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`
     : '';
-  const sorenessSection = soreness !== 'none'
-    ? `\n\nNote: The athlete is reporting ${soreness} lower body soreness today. Adjust workout intensity and type accordingly.`
+  const sorenessSection = soreness === 'yes'
+    ? `\n\nNote: The athlete is reporting lower body soreness today. Take this into account when recommending intensity and workout type.`
     : '';
-  const today = localDateStr();
+  const today = clientToday || localDateStr();
+  const workoutDate = targetDate || today;
+  const workoutDateFormatted = new Date(workoutDate + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
   const daysAhead = targetDate && targetDate > today
     ? Math.round((new Date(targetDate) - new Date(today)) / 86400000)
     : 0;
@@ -324,19 +334,18 @@ function buildPromptContent(runs, units = 'miles', soreness = 'none', targetDate
     : '';
 
   return (
-    `Here are my recent runs:\n${runSummary}${goalSection}${raceSection}${crossTrainingSection}${injurySection}${sorenessSection}${futureDateSection}\n\n` +
+    `You are generating this workout for ${workoutDateFormatted}.\n\nHere are my recent runs:\n${runSummary}${goalSection}${raceSection}${crossTrainingSection}${injurySection}${sorenessSection}${futureDateSection}\n\n` +
     `${unitInstruction} ` +
     `Based on this training history, generate one recommended option for the athlete's next session, plus two alternatives. ` +
-    `You are a coach first — if the training load, recovery signals, or reported soreness suggest the athlete needs rest, recommend a rest day (type: "Rest Day", structure: ["Full rest or light walking only"], target_pace: "N/A"). ` +
-    `The recommended option should be the single best choice given current fitness, recent load, soreness, and stated goal. ` +
-    `Alternatives should offer variety at roughly the same training load, and may also include a rest day if warranted. ` +
-    `For each workout provide specific, concrete targets — exact paces, distances, rep structures, rest intervals. Be precise, not vague. Keep each rationale to 2 sentences maximum.\n\n` +
+    `If the training load, recovery signals, or reported soreness suggest the athlete needs rest, recommend a rest day. ` +
+    `Alternatives can differ in intensity, duration, or type — choose what would genuinely serve the athlete best. ` +
+    `For each workout provide specific, concrete targets — exact paces, distances, rep structures, rest intervals. Be precise, not vague.\n\n` +
     `Respond ONLY with valid JSON in exactly this format:\n` +
     `{\n` +
     `  "recommended": "option_a",\n` +
-    `  "option_a": { "type": "string", "structure": ["step 1", "step 2", "...one string per distinct phase or segment"], "target_pace": "string", "rationale": "max 2 sentences" },\n` +
-    `  "option_b": { "type": "string", "structure": ["step 1", "step 2", "...one string per distinct phase or segment"], "target_pace": "string", "rationale": "max 2 sentences" },\n` +
-    `  "option_c": { "type": "string", "structure": ["step 1", "step 2", "...one string per distinct phase or segment"], "target_pace": "string", "rationale": "max 2 sentences" }\n` +
+    `  "option_a": { "type": "string", "structure": ["step 1", "step 2", "...one string per distinct phase or segment"], "target_pace": "string", "rationale": "2 sentences max" },\n` +
+    `  "option_b": { "type": "string", "structure": ["step 1", "step 2", "...one string per distinct phase or segment"], "target_pace": "string", "rationale": "2 sentences max" },\n` +
+    `  "option_c": { "type": "string", "structure": ["step 1", "step 2", "...one string per distinct phase or segment"], "target_pace": "string", "rationale": "2 sentences max" }\n` +
     `}`
   );
 }
@@ -399,8 +408,8 @@ app.get('/api/activities', async (_req, res) => {
 app.post('/api/cost-estimate', async (req, res) => {
   try {
     const runs = await getActivities();
-    const { units = 'miles', date } = req.body || {};
-    const promptContent = buildPromptContent(runs, units, 'none', date || localDateStr());
+    const { units = 'miles', date, today } = req.body || {};
+    const promptContent = buildPromptContent(runs, units, 'none', date || localDateStr(), today || null);
     const { input_tokens } = await getAnthropicClient().messages.countTokens({
       model: 'claude-sonnet-4-6',
       system: COACHING_PROMPT,
@@ -419,9 +428,9 @@ app.post('/api/cost-estimate', async (req, res) => {
 app.post('/api/prompt-preview', async (req, res) => {
   try {
     const runs = await getActivities();
-    const { units = 'miles', date } = req.body || {};
+    const { units = 'miles', date, today } = req.body || {};
     const systemPrompt = COACHING_PROMPT;
-    const userContent = buildPromptContent(runs, units, 'none', date || localDateStr());
+    const userContent = buildPromptContent(runs, units, 'none', date || localDateStr(), today || null);
     res.json({
       prompt: `[System prompt]\n${systemPrompt}\n\n[User message]\n${userContent}`,
       run_count: runs.length,
@@ -439,6 +448,7 @@ app.post('/api/generate-workout', async (req, res) => {
     if (!runs.length) return res.status(400).json({ error: 'No runs found on Strava.' });
 
     const { units = 'miles', soreness = 'none', date } = req.body || {};
+    const sessionDate = date || localDateStr();
     const message = await getAnthropicClient().messages.create({
       model:      'claude-sonnet-4-6',
       max_tokens: 1024,
@@ -453,8 +463,6 @@ app.post('/api/generate-workout', async (req, res) => {
 
     const { input_tokens, output_tokens } = message.usage;
     const cost = (input_tokens / 1_000_000) * 3 + (output_tokens / 1_000_000) * 15;
-
-    const sessionDate = date || localDateStr();
     db.prepare(`
       INSERT OR REPLACE INTO workout_sessions (date, option_a, option_b, option_c, recommended, selected, input_tokens, output_tokens, created_at)
       VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?)
@@ -482,6 +490,7 @@ app.get('/api/today-session', (_req, res) => {
       option_c: JSON.parse(session.option_c),
       recommended: session.recommended || 'option_a',
       selected: session.selected,
+      result: session.result || null,
       input_tokens: session.input_tokens,
       output_tokens: session.output_tokens,
     },
@@ -508,6 +517,17 @@ app.post('/api/select-workout', (req, res) => {
   res.json({ ok: true });
 });
 
+app.post('/api/session-result', (req, res) => {
+  const { date, result } = req.body;
+  if (result !== null && !['hit', 'partial', 'missed'].includes(result)) {
+    return res.status(400).json({ error: 'Invalid result' });
+  }
+  const targetDate = date || localDateStr();
+  const r = db.prepare('UPDATE workout_sessions SET result = ? WHERE date = ?').run(result, targetDate);
+  if (r.changes === 0) return res.status(404).json({ error: 'No session for that date' });
+  res.json({ ok: true });
+});
+
 // ── Session lookup ─────────────────────────────────────────────────────────────
 
 app.get('/api/session-dates', (_req, res) => {
@@ -525,6 +545,7 @@ app.get('/api/session/:date', (req, res) => {
     option_c: JSON.parse(session.option_c),
     recommended: session.recommended || 'option_a',
     selected: session.selected,
+    result: session.result || null,
     input_tokens: session.input_tokens,
     output_tokens: session.output_tokens,
   });

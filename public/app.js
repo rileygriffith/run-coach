@@ -301,6 +301,40 @@ function renderWorkouts(workouts) {
   });
 }
 
+// ── Workout result picker ─────────────────────────────────────────────────────
+
+function isRestDay(workout) {
+  return workout && workout.type && workout.type.toLowerCase().includes('rest');
+}
+
+function resultPickerHTML(currentResult) {
+  const active = (val) => currentResult === val ? ' active' : '';
+  return `
+    <div class="result-picker">
+      <span class="result-picker-label">How did it go?</span>
+      <div class="result-toggle">
+        <button class="result-btn hit${active('hit')}" data-value="hit">✓ Hit targets</button>
+        <button class="result-btn partial${active('partial')}" data-value="partial">~ Close</button>
+        <button class="result-btn missed${active('missed')}" data-value="missed">✕ Missed</button>
+      </div>
+    </div>
+  `;
+}
+
+function wireResultPicker(container, date) {
+  container.querySelectorAll('.result-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      container.querySelectorAll('.result-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      await fetch('/api/session-result', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ date, result: btn.dataset.value }),
+      });
+    });
+  });
+}
+
 // ── Select workout ────────────────────────────────────────────────────────────
 
 async function selectWorkoutForDate(type, date) {
@@ -330,6 +364,16 @@ async function selectWorkout(type) {
   document.getElementById('generate-btn').disabled = true;
   document.getElementById('generate-locked-msg').hidden = false;
   document.getElementById('unresolved-banner').hidden = true;
+
+  // Show result picker if not 'none' and not a rest day
+  const resultSection = document.getElementById('result-section');
+  if (type !== 'none' && currentWorkouts && !isRestDay(currentWorkouts[type])) {
+    resultSection.innerHTML = resultPickerHTML(null);
+    resultSection.hidden = false;
+    wireResultPicker(resultSection, localDateStr());
+  } else {
+    resultSection.hidden = true;
+  }
 }
 
 // ── Generate confirm modal ────────────────────────────────────────────────────
@@ -338,14 +382,20 @@ async function openGenerateModal() {
   const modal = document.getElementById('generate-modal');
   const body  = document.getElementById('generate-modal-body');
   const units = useImperial ? 'miles' : 'km';
+  const today = localDateStr();
+
+  // Update modal title to show the target date
+  const d = new Date(targetDate + 'T00:00:00');
+  const label = d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
+  document.querySelector('#generate-modal .modal-title').textContent = label;
 
   body.innerHTML = '<div class="state-msg">Loading…</div>';
   modal.hidden = false;
 
   try {
     const [estimateRes, previewRes] = await Promise.all([
-      fetch('/api/cost-estimate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ units, date: targetDate }) }),
-      fetch('/api/prompt-preview', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ units, date: targetDate }) }),
+      fetch('/api/cost-estimate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ units, date: targetDate, today }) }),
+      fetch('/api/prompt-preview', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ units, date: targetDate, today }) }),
     ]);
     const estimate = await estimateRes.json();
     const preview  = await previewRes.json();
@@ -376,11 +426,7 @@ async function openGenerateModal() {
       ${targetDate === localDateStr() ? `
       <div class="soreness-section">
         <span class="generate-preview-label">Lower body soreness</span>
-        <div class="soreness-toggle">
-          <button class="soreness-btn active" data-value="none">None</button>
-          <button class="soreness-btn" data-value="moderate">Moderate</button>
-          <button class="soreness-btn" data-value="high">High</button>
-        </div>
+        <button id="soreness-toggle-btn" class="soreness-toggle-btn" data-sore="no">No</button>
       </div>` : ''}
       <details class="generate-preview-details">
         <summary>Preview prompt</summary>
@@ -388,12 +434,27 @@ async function openGenerateModal() {
       </details>
     `;
 
-    body.querySelectorAll('.soreness-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        body.querySelectorAll('.soreness-btn').forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
+    const sorenessBtn = body.querySelector('#soreness-toggle-btn');
+    const previewEl   = body.querySelector('.prompt-preview');
+    const sorenessNote = '\n\nNote: The athlete is reporting lower body soreness today. Take this into account when recommending intensity and workout type.';
+    // The note sits just before the unit instruction line
+    const insertBefore = '\n\nAll distances and paces must be in';
+    const basePrompt   = preview.prompt;
+
+    if (sorenessBtn) {
+      sorenessBtn.addEventListener('click', () => {
+        const isSore = sorenessBtn.dataset.sore === 'yes';
+        sorenessBtn.dataset.sore = isSore ? 'no' : 'yes';
+        sorenessBtn.textContent = isSore ? 'No' : 'Yes';
+        sorenessBtn.classList.toggle('active', !isSore);
+
+        if (previewEl) {
+          previewEl.textContent = !isSore
+            ? basePrompt.replace(insertBefore, sorenessNote + insertBefore)
+            : basePrompt;
+        }
       });
-    });
+    }
   } catch (err) {
     body.innerHTML = `<div class="state-error">Failed to load preview: ${err.message}</div>`;
   }
@@ -451,6 +512,15 @@ async function openSessionModal(date) {
       await selectWorkoutForDate('none', date);
       modal.hidden = true;
     });
+
+    // Show result picker if a specific workout was selected and it's not a rest day
+    if (data.selected && data.selected !== 'none' && !isRestDay(data[data.selected])) {
+      const resultDiv = document.createElement('div');
+      resultDiv.id = 'modal-result-section';
+      resultDiv.innerHTML = resultPickerHTML(data.result);
+      body.appendChild(resultDiv);
+      wireResultPicker(resultDiv, date);
+    }
 
     // Action footer (outside scrollable body)
     const today = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}-${String(new Date().getDate()).padStart(2, '0')}`;
@@ -517,8 +587,8 @@ document.getElementById('generate-modal').addEventListener('click', (e) => {
   if (e.target === e.currentTarget) e.currentTarget.hidden = true;
 });
 document.getElementById('generate-modal-confirm').addEventListener('click', () => {
-  const sorenessBtn = document.querySelector('.soreness-btn.active');
-  const soreness = sorenessBtn ? sorenessBtn.dataset.value : 'none';
+  const sorenessBtn = document.getElementById('soreness-toggle-btn');
+  const soreness = sorenessBtn?.dataset.sore === 'yes' ? 'yes' : 'none';
   document.getElementById('generate-modal').hidden = true;
   generateWorkout(soreness);
 });
@@ -765,6 +835,15 @@ async function checkTodaySession() {
     document.getElementById('generate-btn').disabled = true;
     if (data.session.selected) {
       document.getElementById('generate-locked-msg').hidden = false;
+    }
+
+    // Show result picker if a specific workout was selected and it's not a rest day
+    const sel = data.session.selected;
+    const resultSection = document.getElementById('result-section');
+    if (sel && sel !== 'none' && !isRestDay(data.session[sel])) {
+      resultSection.innerHTML = resultPickerHTML(data.session.result);
+      resultSection.hidden = false;
+      wireResultPicker(resultSection, localDateStr());
     }
 
     // If a run was completed today but no selection made, show top banner
