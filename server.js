@@ -96,7 +96,7 @@ app.use(session({
   cookie: {
     httpOnly: true,
     sameSite: 'lax',
-    secure: process.env.NODE_ENV === 'production',
+    secure: process.env.NODE_ENV !== 'development',
     maxAge: 7 * 24 * 60 * 60 * 1000,
   },
 }));
@@ -493,12 +493,13 @@ app.post('/api/settings', (req, res) => {
   res.json({ ok: true });
 });
 
-app.post('/api/change-password', (req, res) => {
+app.post('/api/change-password', async (req, res) => {
   const { current, next } = req.body;
-  const active = getSetting('app_password', '') || process.env.APP_PASSWORD;
-  if (current !== active) return res.status(401).json({ error: 'Current password incorrect' });
-  if (!next || next.length < 6) return res.status(400).json({ error: 'New password must be at least 6 characters' });
-  setSetting('app_password', next);
+  const storedHash = getSetting('auth_password_hash', '');
+  const match = storedHash ? await bcrypt.compare(current || '', storedHash) : false;
+  if (!match) return res.status(401).json({ error: 'Current password incorrect' });
+  if (!next || next.length < 8) return res.status(400).json({ error: 'New password must be at least 8 characters' });
+  setSetting('auth_password_hash', await bcrypt.hash(next, 12));
   res.json({ ok: true });
 });
 
