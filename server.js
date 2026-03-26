@@ -4,6 +4,7 @@ const session    = require('express-session');
 const path       = require('path');
 const Database   = require('better-sqlite3');
 const Anthropic  = require('@anthropic-ai/sdk');
+const bcrypt     = require('bcryptjs');
 
 // ── Database ───────────────────────────────────────────────────────────────────
 
@@ -83,24 +84,47 @@ app.use(session({
   secret: process.env.SESSION_SECRET || 'fallback-dev-secret',
   resave: false,
   saveUninitialized: false,
-  cookie: { httpOnly: true, maxAge: 7 * 24 * 60 * 60 * 1000 },
+  cookie: {
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: process.env.NODE_ENV === 'production',
+    maxAge: 7 * 24 * 60 * 60 * 1000,
+  },
 }));
 
 // ── Auth ───────────────────────────────────────────────────────────────────────
 
-function requireAuth(req, res, next) {
-  if (req.session.authenticated) return next();
-  res.redirect('/login');
+// Simple in-memory rate limiting for login attempts
+const loginAttempts = new Map(); // ip → { count, resetAt }
+const MAX_LOGIN_ATTEMPTS = 10;
+const LOGIN_WINDOW_MS    = 15 * 60 * 1000; // 15 minutes
+
+function checkRateLimit(ip) {
+  const now = Date.now();
+  const rec = loginAttempts.get(ip);
+  if (!rec || now > rec.resetAt) {
+    loginAttempts.set(ip, { count: 1, resetAt: now + LOGIN_WINDOW_MS });
+    return true;
+  }
+  if (rec.count >= MAX_LOGIN_ATTEMPTS) return false;
+  rec.count++;
+  return true;
 }
 
-app.get('/login', (req, res) => {
-  if (req.session.authenticated) return res.redirect('/');
-  res.send(`<!DOCTYPE html>
+function authPageHTML({ title, subtitle, fields, action, buttonText, error }) {
+  const errorMessages = {
+    invalid:   'Incorrect username or password.',
+    rate:      'Too many attempts. Try again in 15 minutes.',
+    missing:   'Username and password are required.',
+    short:     'Password must be at least 8 characters.',
+    mismatch:  'Passwords do not match.',
+  };
+  return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Running Coach — Login</title>
+  <title>Running Coach — ${title}</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -113,7 +137,8 @@ app.get('/login', (req, res) => {
       padding: 2.5rem 2rem; width: 100%; max-width: 340px;
     }
     h1 { font-size: 1.3rem; font-weight: 700; margin-bottom: 0.25rem; }
-    p { color: #888; font-size: 0.85rem; margin-bottom: 1.75rem; }
+    p.sub { color: #888; font-size: 0.85rem; margin-bottom: 1.75rem; }
+    .field { margin-bottom: 1rem; }
     label { display: block; font-size: 0.75rem; font-weight: 600; text-transform: uppercase;
       letter-spacing: 0.08em; color: #888; margin-bottom: 0.4rem; }
     input {
@@ -123,7 +148,7 @@ app.get('/login', (req, res) => {
     }
     input:focus { border-color: #60a5fa; }
     button {
-      margin-top: 1.25rem; width: 100%; background: #60a5fa; color: #000;
+      margin-top: 0.5rem; width: 100%; background: #60a5fa; color: #000;
       border: none; border-radius: 8px; padding: 0.7rem; font-size: 0.95rem;
       font-weight: 600; cursor: pointer; transition: opacity 0.15s;
     }
@@ -134,26 +159,86 @@ app.get('/login', (req, res) => {
 <body>
   <div class="card">
     <h1>Running Coach</h1>
-    <p>Enter your password to continue.</p>
-    <form method="POST" action="/login">
-      <label for="password">Password</label>
-      <input id="password" name="password" type="password" autofocus autocomplete="current-password" />
-      <button type="submit">Sign in</button>
-      ${req.query.error ? '<p class="error">Incorrect password.</p>' : ''}
+    <p class="sub">${subtitle}</p>
+    <form method="POST" action="${action}">
+      ${fields.map(f => `
+      <div class="field">
+        <label for="${f.id}">${f.label}</label>
+        <input id="${f.id}" name="${f.name}" type="${f.type}" autocomplete="${f.autocomplete || 'off'}"${f.autofocus ? ' autofocus' : ''} />
+      </div>`).join('')}
+      <button type="submit">${buttonText}</button>
+      ${error && errorMessages[error] ? `<p class="error">${errorMessages[error]}</p>` : ''}
     </form>
   </div>
 </body>
-</html>`);
+</html>`;
+}
+
+function requireAuth(req, res, next) {
+  if (!getSetting('auth_password_hash')) return res.redirect('/setup');
+  if (req.session.authenticated) return next();
+  res.redirect('/login');
+}
+
+// First-run setup — only accessible before credentials are created
+app.get('/setup', (req, res) => {
+  if (getSetting('auth_password_hash')) return res.redirect('/login');
+  res.send(authPageHTML({
+    title:      'Setup',
+    subtitle:   'Create your account to get started.',
+    action:     '/setup',
+    buttonText: 'Create account',
+    error:      req.query.error,
+    fields: [
+      { id: 'username', name: 'username', label: 'Username', type: 'text',     autocomplete: 'username',     autofocus: true },
+      { id: 'password', name: 'password', label: 'Password', type: 'password', autocomplete: 'new-password' },
+      { id: 'confirm',  name: 'confirm',  label: 'Confirm password', type: 'password', autocomplete: 'new-password' },
+    ],
+  }));
 });
 
-app.post('/login', (req, res) => {
-  const activePassword = getSetting('app_password', '') || process.env.APP_PASSWORD;
-  if (req.body.password === activePassword) {
+app.post('/setup', async (req, res) => {
+  if (getSetting('auth_password_hash')) return res.status(403).send('Already set up.');
+  const { username, password, confirm } = req.body;
+  if (!username || !password)      return res.redirect('/setup?error=missing');
+  if (password.length < 8)         return res.redirect('/setup?error=short');
+  if (password !== confirm)        return res.redirect('/setup?error=mismatch');
+  const hash = await bcrypt.hash(password, 12);
+  setSetting('auth_username',      username.trim());
+  setSetting('auth_password_hash', hash);
+  req.session.authenticated = true;
+  res.redirect('/');
+});
+
+app.get('/login', (req, res) => {
+  if (!getSetting('auth_password_hash')) return res.redirect('/setup');
+  if (req.session.authenticated) return res.redirect('/');
+  res.send(authPageHTML({
+    title:      'Login',
+    subtitle:   'Sign in to continue.',
+    action:     '/login',
+    buttonText: 'Sign in',
+    error:      req.query.error,
+    fields: [
+      { id: 'username', name: 'username', label: 'Username', type: 'text',     autocomplete: 'username',          autofocus: true },
+      { id: 'password', name: 'password', label: 'Password', type: 'password', autocomplete: 'current-password' },
+    ],
+  }));
+});
+
+app.post('/login', async (req, res) => {
+  if (!checkRateLimit(req.ip)) return res.redirect('/login?error=rate');
+  const { username, password } = req.body;
+  const storedUsername = getSetting('auth_username', '');
+  const storedHash     = getSetting('auth_password_hash', '');
+  // Always run bcrypt.compare to avoid timing-based username enumeration
+  const passwordMatch = storedHash ? await bcrypt.compare(password || '', storedHash) : false;
+  if (username === storedUsername && passwordMatch) {
+    loginAttempts.delete(req.ip);
     req.session.authenticated = true;
-    res.redirect('/');
-  } else {
-    res.redirect('/login?error=1');
+    return res.redirect('/');
   }
+  res.redirect('/login?error=invalid');
 });
 
 app.post('/logout', (req, res) => {
@@ -367,6 +452,10 @@ function buildPromptContent(runs, units = 'miles', soreness = 'none', targetDate
 }
 
 // ── Settings API ───────────────────────────────────────────────────────────────
+
+app.get('/api/me', (_req, res) => {
+  res.json({ username: getSetting('auth_username', '') });
+});
 
 app.get('/api/settings', (_req, res) => {
   const raceDate = getSetting('race_date', '');

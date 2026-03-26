@@ -654,14 +654,60 @@ document.getElementById('generate-modal-confirm').addEventListener('click', () =
 
 let promptLoaded = false;
 
+// ── User menu ─────────────────────────────────────────────────────────────────
+
+fetch('/api/me').then(r => r.json()).then(({ username }) => {
+  document.getElementById('user-menu-username').textContent = username;
+});
+
+const userMenuBtn      = document.getElementById('user-menu-btn');
+const userMenuDropdown = document.getElementById('user-menu-dropdown');
+
 // ── Settings ──────────────────────────────────────────────────────────────────
 
 const settingsPanel = document.getElementById('settings-panel');
+const settingsGroups = ['training', 'credentials', 'account', 'data'];
+let activeSettingsSection = null;
 
-const settingsBtn = document.getElementById('settings-btn');
-settingsBtn.addEventListener('click', () => {
-  settingsPanel.hidden = !settingsPanel.hidden;
-  settingsBtn.classList.toggle('active', !settingsPanel.hidden);
+function openSettingsSection(section) {
+  settingsGroups.forEach(g => {
+    document.getElementById(`settings-group-${g}`).hidden = (g !== section);
+  });
+  settingsPanel.hidden = false;
+  activeSettingsSection = section;
+}
+
+function closeSettingsPanel() {
+  settingsPanel.hidden = true;
+  activeSettingsSection = null;
+}
+
+document.getElementById('settings-close-btn').addEventListener('click', closeSettingsPanel);
+
+userMenuBtn.addEventListener('click', (e) => {
+  e.stopPropagation();
+  const open = !userMenuDropdown.hidden;
+  userMenuDropdown.hidden = open;
+  userMenuBtn.setAttribute('aria-expanded', String(!open));
+});
+
+document.addEventListener('click', () => {
+  userMenuDropdown.hidden = true;
+  userMenuBtn.setAttribute('aria-expanded', 'false');
+});
+
+document.querySelectorAll('[data-settings]').forEach(btn => {
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    userMenuDropdown.hidden = true;
+    userMenuBtn.setAttribute('aria-expanded', 'false');
+    const section = btn.dataset.settings.replace('settings-group-', '');
+    if (activeSettingsSection === section) {
+      closeSettingsPanel();
+    } else {
+      openSettingsSection(section);
+    }
+  });
 });
 
 async function saveSetting(key, value) {

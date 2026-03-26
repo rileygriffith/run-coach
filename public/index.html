@@ -22,7 +22,22 @@
           <button id="unit-km" class="unit-btn">km</button>
           <button id="unit-mi" class="unit-btn active">mi</button>
         </div>
-        <button id="settings-btn" class="settings-btn" title="Settings">⚙</button>
+        <div class="user-menu" id="user-menu">
+          <button class="user-menu-btn" id="user-menu-btn" aria-expanded="false">
+            <span id="user-menu-username"></span>
+            <svg width="10" height="6" viewBox="0 0 10 6" fill="none"><path d="M1 1l4 4 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+          <div class="user-menu-dropdown" id="user-menu-dropdown" hidden>
+            <button class="user-menu-item" data-settings="settings-group-training">Training</button>
+            <button class="user-menu-item" data-settings="settings-group-credentials">Credentials</button>
+            <button class="user-menu-item" data-settings="settings-group-account">Account</button>
+            <button class="user-menu-item" data-settings="settings-group-data">Data</button>
+            <div class="user-menu-divider"></div>
+            <form method="POST" action="/logout">
+              <button type="submit" class="user-menu-signout">Sign out</button>
+            </form>
+          </div>
+        </div>
       </div>
     </header>
 
@@ -34,7 +49,8 @@
 
     <!-- Settings panel -->
     <section id="settings-panel" class="section settings-panel" hidden>
-      <div class="settings-group">
+      <button id="settings-close-btn" class="settings-close-btn" aria-label="Close">✕</button>
+      <div class="settings-group" id="settings-group-training">
         <div class="settings-group-label">Training</div>
         <div class="settings-field">
           <label for="goal-input">Goal</label>
@@ -68,7 +84,7 @@
         </div>
       </div>
 
-      <div class="settings-group">
+      <div class="settings-group" id="settings-group-credentials">
         <div class="settings-group-label">Credentials</div>
         <div class="settings-field">
           <label for="anthropic-key-input">Anthropic API key</label>
@@ -88,7 +104,7 @@
         </div>
       </div>
 
-      <div class="settings-group">
+      <div class="settings-group" id="settings-group-account">
         <div class="settings-group-label">Account</div>
         <div class="settings-field">
           <label for="current-password-input">Current password</label>
@@ -102,7 +118,7 @@
         <p id="change-password-msg" class="settings-msg" hidden></p>
       </div>
 
-      <div class="settings-group">
+      <div class="settings-group" id="settings-group-data">
         <div class="settings-group-label">Data</div>
         <button id="sync-btn" class="settings-action-btn">Sync from Strava now</button>
         <p id="sync-msg" class="settings-msg" hidden></p>

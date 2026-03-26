@@ -68,12 +68,91 @@ header {
 .settings-btn:hover { color: var(--text); border-color: var(--text-muted); }
 .settings-btn.active { color: var(--accent); border-color: var(--accent); }
 
+.user-menu { position: relative; }
+
+.user-menu-btn {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.8rem;
+  font-family: inherit;
+  padding: 0.35rem 0.65rem;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  transition: color 0.15s, border-color 0.15s;
+}
+.user-menu-btn:hover { color: var(--text); border-color: var(--text-muted); }
+
+.user-menu-dropdown {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  min-width: 120px;
+  z-index: 100;
+  overflow: hidden;
+}
+
+.user-menu-item {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 0.85rem;
+  padding: 0.6rem 0.875rem;
+  width: 100%;
+  text-align: left;
+  transition: background 0.15s, color 0.15s;
+}
+.user-menu-item:hover { background: var(--surface); color: var(--text); }
+
+.user-menu-divider {
+  border-top: 1px solid var(--border);
+  margin: 0.25rem 0;
+}
+
+.user-menu-signout {
+  background: none;
+  border: none;
+  color: var(--red);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 0.85rem;
+  padding: 0.6rem 0.875rem;
+  width: 100%;
+  text-align: left;
+  transition: background 0.15s;
+}
+.user-menu-signout:hover { background: rgba(248,113,113,0.08); }
+
 .settings-panel {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 1.25rem 1.5rem;
+  position: relative;
 }
+
+.settings-close-btn {
+  position: absolute;
+  top: 0.875rem;
+  right: 0.875rem;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.85rem;
+  line-height: 1;
+  padding: 0.25rem;
+  transition: color 0.15s;
+}
+.settings-close-btn:hover { color: var(--text); }
 
 .settings-group {
   margin-bottom: 1.75rem;
@@ -113,17 +192,27 @@ header {
 .settings-input:focus, .settings-select:focus { border-color: var(--accent); }
 
 .settings-action-btn {
-  background: var(--surface);
-  border: 1px solid var(--border);
+  background: none;
+  border: 1px solid var(--blue);
   border-radius: 8px;
-  color: var(--text);
-  font-size: 0.85rem;
-  padding: 0.5rem 1rem;
+  color: var(--blue);
+  font-size: 0.82rem;
+  font-family: inherit;
+  padding: 0.5rem 0.875rem;
   cursor: pointer;
-  transition: border-color 0.15s;
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
   margin-top: 0.25rem;
 }
-.settings-action-btn:hover { border-color: var(--accent); }
+.settings-action-btn:hover { background: rgba(96,165,250,0.08); }
+.settings-action-btn--danger { border-color: var(--red); color: var(--red); }
+.settings-action-btn--danger:hover { background: rgba(248,113,113,0.08); }
+
+.settings-account-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 0.25rem;
+}
 
 .settings-msg {
   font-size: 0.82rem;
