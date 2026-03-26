@@ -207,7 +207,7 @@ async function loadActivities() {
 
 // ── Generate workouts ─────────────────────────────────────────────────────────
 
-async function generateWorkout(soreness = 'none') {
+async function generateWorkout(soreness = 'none', historyDays = 60) {
   const btn        = document.getElementById('generate-btn');
   const btnText    = document.getElementById('btn-text');
   const btnLoading = document.getElementById('btn-loading');
@@ -223,7 +223,7 @@ async function generateWorkout(soreness = 'none') {
     const res = await fetch('/api/generate-workout', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ goal, units: useImperial ? 'miles' : 'km', soreness, date: targetDate }),
+      body: JSON.stringify({ goal, units: useImperial ? 'miles' : 'km', soreness, date: targetDate, history_days: historyDays }),
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Unknown error');
@@ -398,27 +398,39 @@ async function selectWorkout(type) {
 
 async function openGenerateModal() {
   const modal = document.getElementById('generate-modal');
-  const body  = document.getElementById('generate-modal-body');
-  const units = useImperial ? 'miles' : 'km';
-  const today = localDateStr();
-
   // Update modal title to show the target date
   const d = new Date(targetDate + 'T00:00:00');
   const label = d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
   document.querySelector('#generate-modal .modal-title').textContent = label;
 
-  body.innerHTML = '<div class="state-msg">Loading…</div>';
   modal.hidden = false;
+  await loadGeneratePreview();
+}
+
+async function loadGeneratePreview() {
+  const historyDays = 60;
+  const body  = document.getElementById('generate-modal-body');
+  const units = useImperial ? 'miles' : 'km';
+  const today = localDateStr();
+
+  body.innerHTML = '<div class="state-msg">Loading…</div>';
 
   try {
+    const payload = { units, date: targetDate, today, history_days: historyDays };
     const [estimateRes, previewRes] = await Promise.all([
-      fetch('/api/cost-estimate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ units, date: targetDate, today }) }),
-      fetch('/api/prompt-preview', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ units, date: targetDate, today }) }),
+      fetch('/api/cost-estimate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }),
+      fetch('/api/prompt-preview', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }),
     ]);
     const estimate = await estimateRes.json();
     const preview  = await previewRes.json();
 
     body.innerHTML = `
+      ${targetDate === localDateStr() ? `
+      <div class="soreness-section">
+        <span class="generate-preview-label">Lower body soreness</span>
+        <button id="soreness-toggle-btn" class="soreness-toggle-btn" data-sore="no">No</button>
+      </div>` : ''}
+      <p class="generate-section-label">Cost estimate</p>
       <div class="generate-preview-meta">
         <div class="generate-preview-row">
           <span class="generate-preview-label">Model</span>
@@ -426,7 +438,7 @@ async function openGenerateModal() {
         </div>
         <div class="generate-preview-row">
           <span class="generate-preview-label">Input tokens</span>
-          <span>${estimate.input_tokens.toLocaleString()}</span>
+          <span id="preview-input-tokens">${estimate.input_tokens.toLocaleString()}</span>
         </div>
         <div class="generate-preview-row">
           <span class="generate-preview-label">Est. output tokens</span>
@@ -434,18 +446,50 @@ async function openGenerateModal() {
         </div>
         <div class="generate-preview-row">
           <span class="generate-preview-label">Est. cost</span>
-          <span class="generate-preview-cost">~$${estimate.cost.toFixed(4)}</span>
-        </div>
-        <div class="generate-preview-row">
-          <span class="generate-preview-label">Runs in prompt</span>
-          <span>${preview.run_count}</span>
+          <span class="generate-preview-cost" id="preview-cost">~$${estimate.cost.toFixed(4)}</span>
         </div>
       </div>
-      ${targetDate === localDateStr() ? `
-      <div class="soreness-section">
-        <span class="generate-preview-label">Lower body soreness</span>
-        <button id="soreness-toggle-btn" class="soreness-toggle-btn" data-sore="no">No</button>
-      </div>` : ''}
+      <p class="generate-section-label">Prompt context</p>
+      <div class="generate-preview-meta">
+        ${preview.goal ? `
+        <div class="generate-preview-row">
+          <span class="generate-preview-label">Goal</span>
+          <span class="generate-preview-goal">${preview.goal}</span>
+        </div>` : ''}
+        <div class="generate-preview-row">
+          <span class="generate-preview-label">Training philosophy</span>
+          <span>80/20 polarized</span>
+        </div>
+        <div class="generate-preview-row">
+          <span class="generate-preview-label">History window</span>
+          <span>${(() => {
+            const fmt = d => new Date(d + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+            return preview.oldest_run && preview.newest_run
+              ? `${preview.history_days} days · ${fmt(preview.oldest_run)} – ${fmt(preview.newest_run)} · ${preview.run_count} runs`
+              : `${preview.history_days} days`;
+          })()}</span>
+        </div>
+        ${preview.days_since_last_run !== null ? `
+        <div class="generate-preview-row">
+          <span class="generate-preview-label">Days since last run</span>
+          <span>${preview.days_since_last_run === 0 ? 'Today' : preview.days_since_last_run === 1 ? 'Yesterday' : preview.days_since_last_run + ' days ago'}</span>
+        </div>` : ''}
+        ${preview.last_prescribed ? `
+        <div class="generate-preview-row">
+          <span class="generate-preview-label">Last prescribed</span>
+          <span>${preview.last_prescribed}</span>
+        </div>` : ''}
+        ${(preview.race_distance || preview.race_date) ? `
+        <div class="generate-preview-row">
+          <span class="generate-preview-label">Race target</span>
+          <span>${[preview.race_distance, preview.race_date ? (() => {
+            const d = new Date(preview.race_date + 'T12:00:00');
+            const daysOut = Math.round((d - new Date()) / 86400000);
+            const label = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+            return `${label} (${daysOut === 0 ? 'today' : daysOut === 1 ? 'tomorrow' : daysOut + ' days out'})`;
+          })() : ''].filter(Boolean).join(' · ')}</span>
+        </div>` : ''}
+      </div>
       <details class="generate-preview-details">
         <summary>Preview prompt</summary>
         <pre class="prompt-preview">${preview.prompt}</pre>
@@ -455,7 +499,6 @@ async function openGenerateModal() {
     const sorenessBtn = body.querySelector('#soreness-toggle-btn');
     const previewEl   = body.querySelector('.prompt-preview');
     const sorenessNote = '\n\nNote: The athlete is reporting lower body soreness today. Take this into account when recommending intensity and workout type.';
-    // The note sits just before the unit instruction line
     const insertBefore = '\n\nAll distances and paces must be in';
     const basePrompt   = preview.prompt;
 
@@ -465,7 +508,6 @@ async function openGenerateModal() {
         sorenessBtn.dataset.sore = isSore ? 'no' : 'yes';
         sorenessBtn.textContent = isSore ? 'No' : 'Yes';
         sorenessBtn.classList.toggle('active', !isSore);
-
         if (previewEl) {
           previewEl.textContent = !isSore
             ? basePrompt.replace(insertBefore, sorenessNote + insertBefore)
@@ -603,8 +645,9 @@ document.getElementById('generate-modal').addEventListener('click', (e) => {
 document.getElementById('generate-modal-confirm').addEventListener('click', () => {
   const sorenessBtn = document.getElementById('soreness-toggle-btn');
   const soreness = sorenessBtn?.dataset.sore === 'yes' ? 'yes' : 'none';
+  const historyDays = 60;
   document.getElementById('generate-modal').hidden = true;
-  generateWorkout(soreness);
+  generateWorkout(soreness, historyDays);
 });
 
 // ── Prompt preview (used by generate modal) ───────────────────────────────────

@@ -10,13 +10,9 @@ const Anthropic  = require('@anthropic-ai/sdk');
 const dataDir = path.join(__dirname, 'data');
 require('fs').mkdirSync(dataDir, { recursive: true });
 const db = new Database(path.join(dataDir, 'coach.db'));
-// Add workout_type column to existing DBs that predate this migration
-try { db.exec('ALTER TABLE runs ADD COLUMN workout_type TEXT'); } catch (_) {}
-try { db.exec('ALTER TABLE workout_sessions ADD COLUMN recommended TEXT'); } catch (_) {}
-try { db.exec('ALTER TABLE workout_sessions ADD COLUMN input_tokens INTEGER'); } catch (_) {}
-try { db.exec('ALTER TABLE workout_sessions ADD COLUMN output_tokens INTEGER'); } catch (_) {}
-try { db.exec('ALTER TABLE workout_sessions ADD COLUMN result TEXT'); } catch (_) {}
-try { db.exec('ALTER TABLE workout_sessions ADD COLUMN result_notes TEXT'); } catch (_) {}
+
+// ── Schema ─────────────────────────────────────────────────────────────────────
+// Base tables — safe to re-run, CREATE TABLE IF NOT EXISTS is idempotent.
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS runs (
@@ -45,6 +41,17 @@ db.exec(`
     created_at TEXT
   );
 `);
+
+// ── Migrations ─────────────────────────────────────────────────────────────────
+// ALTER TABLE fails if the column already exists — the catch is intentional.
+// Add new columns here; do not remove or reorder existing entries.
+
+try { db.exec('ALTER TABLE runs ADD COLUMN workout_type TEXT'); } catch (_) {}                          // added: Strava workout type field
+try { db.exec('ALTER TABLE workout_sessions ADD COLUMN recommended TEXT'); } catch (_) {}              // added: track which option Claude recommended
+try { db.exec('ALTER TABLE workout_sessions ADD COLUMN input_tokens INTEGER'); } catch (_) {}          // added: token usage tracking
+try { db.exec('ALTER TABLE workout_sessions ADD COLUMN output_tokens INTEGER'); } catch (_) {}         // added: token usage tracking
+try { db.exec('ALTER TABLE workout_sessions ADD COLUMN result TEXT'); } catch (_) {}                   // added: hit/partial/missed workout result
+try { db.exec('ALTER TABLE workout_sessions ADD COLUMN result_notes TEXT'); } catch (_) {}             // added: optional notes on result
 
 function localDateStr(date = new Date()) {
   const y = date.getFullYear();
@@ -286,7 +293,11 @@ function buildRunSummary(runs, sessionMap = {}) {
   }).join('\n');
 }
 
-function buildPromptContent(runs, units = 'miles', soreness = 'none', targetDate = null, clientToday = null) {
+function buildPromptContent(runs, units = 'miles', soreness = 'none', targetDate = null, clientToday = null, historyDays = 60) {
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - historyDays);
+  runs = runs.filter(r => new Date(r.date) >= cutoff);
+
   const goal = getSetting('goal', '');
 
   // Build date → workout entry map from sessions with a selection
@@ -358,6 +369,12 @@ function buildPromptContent(runs, units = 'miles', soreness = 'none', targetDate
 // ── Settings API ───────────────────────────────────────────────────────────────
 
 app.get('/api/settings', (_req, res) => {
+  const raceDate = getSetting('race_date', '');
+  if (raceDate && new Date(raceDate + 'T23:59:59') < new Date()) {
+    setSetting('race_date', '');
+    setSetting('race_distance', '');
+    console.log('[settings] Race target cleared — date has passed');
+  }
   const INTERNAL_KEYS = ['last_synced_at'];
   const rows = db.prepare('SELECT key, value FROM settings').all();
   const s = {};
@@ -413,8 +430,8 @@ app.get('/api/activities', async (_req, res) => {
 app.post('/api/cost-estimate', async (req, res) => {
   try {
     const runs = await getActivities();
-    const { units = 'miles', date, today } = req.body || {};
-    const promptContent = buildPromptContent(runs, units, 'none', date || localDateStr(), today || null);
+    const { units = 'miles', date, today, history_days } = req.body || {};
+    const promptContent = buildPromptContent(runs, units, 'none', date || localDateStr(), today || null, history_days || 60);
     const { input_tokens } = await getAnthropicClient().messages.countTokens({
       model: 'claude-sonnet-4-6',
       system: COACHING_PROMPT,
@@ -432,13 +449,44 @@ app.post('/api/cost-estimate', async (req, res) => {
 
 app.post('/api/prompt-preview', async (req, res) => {
   try {
-    const runs = await getActivities();
-    const { units = 'miles', date, today } = req.body || {};
+    const allRuns = await getActivities();
+    const { units = 'miles', date, today, history_days } = req.body || {};
+    const days = history_days || 60;
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - days);
+    const runs = allRuns.filter(r => new Date(r.date) >= cutoff);
     const systemPrompt = COACHING_PROMPT;
-    const userContent = buildPromptContent(runs, units, 'none', date || localDateStr(), today || null);
+    const userContent = buildPromptContent(runs, units, 'none', date || localDateStr(), today || null, days);
+    const oldest = runs.length ? runs[runs.length - 1].date.slice(0, 10) : null;
+    const newest = runs.length ? runs[0].date.slice(0, 10) : null;
+    const daysSinceLastRun = newest
+      ? Math.round((new Date() - new Date(newest + 'T12:00:00')) / 86400000)
+      : null;
+    const lastSession = db.prepare(
+      `SELECT date, selected, recommended, option_a, option_b, option_c
+       FROM workout_sessions ORDER BY date DESC LIMIT 1`
+    ).get();
+    let lastPrescribed = null;
+    if (lastSession) {
+      const key = lastSession.selected || lastSession.recommended;
+      if (key && lastSession[key]) {
+        try {
+          const w = JSON.parse(lastSession[key]);
+          lastPrescribed = w.type || null;
+        } catch (_) {}
+      }
+    }
     res.json({
       prompt: `[System prompt]\n${systemPrompt}\n\n[User message]\n${userContent}`,
       run_count: runs.length,
+      history_days: days,
+      oldest_run: oldest,
+      newest_run: newest,
+      days_since_last_run: daysSinceLastRun,
+      last_prescribed: lastPrescribed,
+      goal: getSetting('goal', ''),
+      race_distance: getSetting('race_distance', ''),
+      race_date: getSetting('race_date', ''),
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -452,13 +500,13 @@ app.post('/api/generate-workout', async (req, res) => {
     const runs = await getActivities();
     if (!runs.length) return res.status(400).json({ error: 'No runs found on Strava.' });
 
-    const { units = 'miles', soreness = 'none', date } = req.body || {};
+    const { units = 'miles', soreness = 'none', date, history_days } = req.body || {};
     const sessionDate = date || localDateStr();
     const message = await getAnthropicClient().messages.create({
       model:      'claude-sonnet-4-6',
       max_tokens: 1024,
       system:     COACHING_PROMPT,
-      messages:   [{ role: 'user', content: buildPromptContent(runs, units, soreness, sessionDate) }],
+      messages:   [{ role: 'user', content: buildPromptContent(runs, units, soreness, sessionDate, null, history_days || 60) }],
     });
 
     const text      = message.content[0].text;

@@ -758,6 +758,21 @@ header {
 .modal-body {
   overflow-y: auto;
   flex: 1;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255,255,255,0.15) transparent;
+}
+
+.modal-body::-webkit-scrollbar {
+  width: 5px;
+}
+
+.modal-body::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.modal-body::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0.18);
+  border-radius: 3px;
 }
 
 .modal-header {
@@ -896,6 +911,15 @@ header {
 }
 
 /* ── Generate confirm modal ──────────────────────────────────────────────────── */
+.generate-section-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  margin: 0.75rem 0 0.35rem;
+}
+
 .generate-preview-meta {
   background: var(--surface-2);
   border: 1px solid var(--border);
@@ -927,6 +951,14 @@ header {
   font-family: monospace;
 }
 
+.generate-preview-goal {
+  max-width: 60%;
+  text-align: right;
+  color: var(--text-muted);
+  font-style: italic;
+  font-size: 0.82rem;
+}
+
 .soreness-toggle-btn {
   background: var(--surface-3);
   border: 1px solid var(--border);
@@ -956,6 +988,7 @@ header {
   padding: 0.75rem 1rem;
   margin-top: 0.75rem;
 }
+
 
 /* ── Workout result picker ──────────────────────────────────────────────────── */
 
