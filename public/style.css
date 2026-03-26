@@ -1001,11 +1001,37 @@ header {
 .result-btn.partial.active { background: #92400e; color: #fde68a; }
 .result-btn.missed.active  { background: #7f1d1d; color: #fecaca; }
 
-/* In session modal */
-#modal-result-section {
-  margin-top: 1rem;
-  padding-top: 1rem;
+.result-notes {
+  width: 100%;
+  margin-top: 0.6rem;
+  background: var(--surface-3);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 0.78rem;
+  padding: 0.4rem 0.6rem;
+  resize: vertical;
+  box-sizing: border-box;
+}
+
+.result-notes:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+/* Inline inside the chosen workout card */
+.modal-result-inline {
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
   border-top: 1px solid var(--border);
+}
+
+.modal-result-inline .result-picker {
+  background: transparent;
+  border: none;
+  padding: 0;
+  margin: 0;
 }
 
 .generate-preview-details summary {

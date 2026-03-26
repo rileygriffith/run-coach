@@ -16,6 +16,7 @@ try { db.exec('ALTER TABLE workout_sessions ADD COLUMN recommended TEXT'); } cat
 try { db.exec('ALTER TABLE workout_sessions ADD COLUMN input_tokens INTEGER'); } catch (_) {}
 try { db.exec('ALTER TABLE workout_sessions ADD COLUMN output_tokens INTEGER'); } catch (_) {}
 try { db.exec('ALTER TABLE workout_sessions ADD COLUMN result TEXT'); } catch (_) {}
+try { db.exec('ALTER TABLE workout_sessions ADD COLUMN result_notes TEXT'); } catch (_) {}
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS runs (
@@ -266,10 +267,13 @@ function buildRunSummary(runs, sessionMap = {}) {
       : 'N/A';
     const date = new Date(r.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
     const entry = sessionMap[r.date.slice(0, 10)];
-    const resultStr = entry?.result === 'hit'     ? ' — hit targets'
-                    : entry?.result === 'partial'  ? ' — hit some targets'
-                    : entry?.result === 'missed'   ? ' — missed targets'
-                    : '';
+    const resultLabel = entry?.result === 'hit'    ? 'hit targets'
+                      : entry?.result === 'partial' ? 'hit some targets'
+                      : entry?.result === 'missed'  ? 'missed targets'
+                      : null;
+    const resultStr = resultLabel
+      ? ` — ${resultLabel}${entry.result_notes ? `: ${entry.result_notes}` : ''}`
+      : '';
     return (
       `- ${date}: ${distMi}mi, pace ${pace}` +
       `, HR ${r.average_heartrate ? Math.round(r.average_heartrate) + ' bpm' : 'N/A'}` +
@@ -277,7 +281,7 @@ function buildRunSummary(runs, sessionMap = {}) {
       `, power ${r.average_watts ? Math.round(r.average_watts) + 'W' : 'N/A'}` +
       `, elevation gain ${Math.round(r.total_elevation_gain || 0)}ft` +
       `, elapsed ${Math.floor(r.elapsed_time / 60)}m${r.elapsed_time % 60}s` +
-      (entry ? `, workout: ${entry.structure}${resultStr}` : '')
+      (entry ? `, workout: ${entry.type}${entry.target_pace && entry.target_pace !== 'N/A' ? ` at ${entry.target_pace}` : ''}${resultStr}` : '')
     );
   }).join('\n');
 }
@@ -286,13 +290,14 @@ function buildPromptContent(runs, units = 'miles', soreness = 'none', targetDate
   const goal = getSetting('goal', '');
 
   // Build date → workout entry map from sessions with a selection
-  const sessions = db.prepare('SELECT date, option_a, option_b, option_c, recommended, selected, result FROM workout_sessions').all();
+  const sessions = db.prepare('SELECT date, option_a, option_b, option_c, recommended, selected, result, result_notes FROM workout_sessions').all();
   const sessionMap = {};
   for (const s of sessions) {
     const key = s.selected || s.recommended;
     if (key && s[key]) {
       try {
-        sessionMap[s.date] = { structure: JSON.parse(s[key]).structure, result: s.result };
+        const w = JSON.parse(s[key]);
+        sessionMap[s.date] = { type: w.type, target_pace: w.target_pace, result: s.result, result_notes: s.result_notes };
       } catch (_) {}
     }
   }
@@ -491,6 +496,7 @@ app.get('/api/today-session', (_req, res) => {
       recommended: session.recommended || 'option_a',
       selected: session.selected,
       result: session.result || null,
+      result_notes: session.result_notes || null,
       input_tokens: session.input_tokens,
       output_tokens: session.output_tokens,
     },
@@ -518,12 +524,12 @@ app.post('/api/select-workout', (req, res) => {
 });
 
 app.post('/api/session-result', (req, res) => {
-  const { date, result } = req.body;
+  const { date, result, notes } = req.body;
   if (result !== null && !['hit', 'partial', 'missed'].includes(result)) {
     return res.status(400).json({ error: 'Invalid result' });
   }
   const targetDate = date || localDateStr();
-  const r = db.prepare('UPDATE workout_sessions SET result = ? WHERE date = ?').run(result, targetDate);
+  const r = db.prepare('UPDATE workout_sessions SET result = ?, result_notes = ? WHERE date = ?').run(result, notes ?? null, targetDate);
   if (r.changes === 0) return res.status(404).json({ error: 'No session for that date' });
   res.json({ ok: true });
 });
@@ -546,6 +552,7 @@ app.get('/api/session/:date', (req, res) => {
     recommended: session.recommended || 'option_a',
     selected: session.selected,
     result: session.result || null,
+    result_notes: session.result_notes || null,
     input_tokens: session.input_tokens,
     output_tokens: session.output_tokens,
   });

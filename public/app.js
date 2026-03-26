@@ -307,7 +307,13 @@ function isRestDay(workout) {
   return workout && workout.type && workout.type.toLowerCase().includes('rest');
 }
 
-function resultPickerHTML(currentResult) {
+const RESULT_DEFAULTS = {
+  hit:     'Hit all targets as prescribed.',
+  partial: 'Hit some targets but not all.',
+  missed:  'Could not hit the prescribed targets.',
+};
+
+function resultPickerHTML(currentResult, currentNotes) {
   const active = (val) => currentResult === val ? ' active' : '';
   return `
     <div class="result-picker">
@@ -317,22 +323,43 @@ function resultPickerHTML(currentResult) {
         <button class="result-btn partial${active('partial')}" data-value="partial">~ Close</button>
         <button class="result-btn missed${active('missed')}" data-value="missed">✕ Missed</button>
       </div>
+      <textarea class="result-notes" placeholder="Add a note…" rows="2">${currentNotes || ''}</textarea>
     </div>
   `;
 }
 
 function wireResultPicker(container, date) {
+  const textarea = container.querySelector('.result-notes');
+
   container.querySelectorAll('.result-btn').forEach(btn => {
-    btn.addEventListener('click', async () => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
       container.querySelectorAll('.result-btn').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
-      await fetch('/api/session-result', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ date, result: btn.dataset.value }),
-      });
+      if (textarea && !textarea.value.trim()) {
+        textarea.value = RESULT_DEFAULTS[btn.dataset.value] || '';
+      }
+      await save();
     });
   });
+
+  if (textarea) {
+    textarea.addEventListener('click', (e) => e.stopPropagation());
+    textarea.addEventListener('blur', save);
+  }
+
+  async function save() {
+    const activeBtn = container.querySelector('.result-btn.active');
+    await fetch('/api/session-result', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        date,
+        result: activeBtn ? activeBtn.dataset.value : null,
+        notes: textarea ? textarea.value.trim() || null : null,
+      }),
+    });
+  }
 }
 
 // ── Select workout ────────────────────────────────────────────────────────────
@@ -346,6 +373,7 @@ async function selectWorkoutForDate(type, date) {
   promptLoaded = false;
   document.getElementById('unresolved-banner').hidden = true;
   renderCalendar(allRuns);
+  if (date === localDateStr()) await checkTodaySession();
 }
 
 async function selectWorkout(type) {
@@ -364,16 +392,6 @@ async function selectWorkout(type) {
   document.getElementById('generate-btn').disabled = true;
   document.getElementById('generate-locked-msg').hidden = false;
   document.getElementById('unresolved-banner').hidden = true;
-
-  // Show result picker if not 'none' and not a rest day
-  const resultSection = document.getElementById('result-section');
-  if (type !== 'none' && currentWorkouts && !isRestDay(currentWorkouts[type])) {
-    resultSection.innerHTML = resultPickerHTML(null);
-    resultSection.hidden = false;
-    wireResultPicker(resultSection, localDateStr());
-  } else {
-    resultSection.hidden = true;
-  }
 }
 
 // ── Generate confirm modal ────────────────────────────────────────────────────
@@ -481,6 +499,7 @@ async function openSessionModal(date) {
       const w = data[key];
       const isSelected = data.selected === key;
       const isRec = key === data.recommended;
+      const showResult = isSelected && !isRestDay(w);
       return `
         <div class="modal-workout ${isSelected ? 'modal-workout-selected' : ''} modal-workout-selectable" data-key="${key}">
           <div class="modal-workout-header">
@@ -493,6 +512,7 @@ async function openSessionModal(date) {
           <div class="workout-structure">${(Array.isArray(w.structure) ? w.structure : w.structure.split('\n')).map(s => `<div class="workout-step">${s}</div>`).join('')}</div>
           <div class="workout-pace">Target: ${w.target_pace}</div>
           <div class="workout-rationale">${w.rationale}</div>
+          ${showResult ? `<div class="modal-result-inline">${resultPickerHTML(data.result, data.result_notes)}</div>` : ''}
         </div>
       `;
     }).join('') + `
@@ -513,14 +533,8 @@ async function openSessionModal(date) {
       modal.hidden = true;
     });
 
-    // Show result picker if a specific workout was selected and it's not a rest day
-    if (data.selected && data.selected !== 'none' && !isRestDay(data[data.selected])) {
-      const resultDiv = document.createElement('div');
-      resultDiv.id = 'modal-result-section';
-      resultDiv.innerHTML = resultPickerHTML(data.result);
-      body.appendChild(resultDiv);
-      wireResultPicker(resultDiv, date);
-    }
+    const resultInline = body.querySelector('.modal-result-inline');
+    if (resultInline) wireResultPicker(resultInline, date);
 
     // Action footer (outside scrollable body)
     const today = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}-${String(new Date().getDate()).padStart(2, '0')}`;
@@ -835,15 +849,6 @@ async function checkTodaySession() {
     document.getElementById('generate-btn').disabled = true;
     if (data.session.selected) {
       document.getElementById('generate-locked-msg').hidden = false;
-    }
-
-    // Show result picker if a specific workout was selected and it's not a rest day
-    const sel = data.session.selected;
-    const resultSection = document.getElementById('result-section');
-    if (sel && sel !== 'none' && !isRestDay(data.session[sel])) {
-      resultSection.innerHTML = resultPickerHTML(data.session.result);
-      resultSection.hidden = false;
-      wireResultPicker(resultSection, localDateStr());
     }
 
     // If a run was completed today but no selection made, show top banner
