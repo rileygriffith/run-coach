@@ -91,16 +91,11 @@
           <input id="anthropic-key-input" type="password" class="settings-input" placeholder="sk-ant-…" autocomplete="off" />
         </div>
         <div class="settings-field">
-          <label for="strava-client-id-input">Strava client ID</label>
-          <input id="strava-client-id-input" type="password" class="settings-input" autocomplete="off" />
-        </div>
-        <div class="settings-field">
-          <label for="strava-client-secret-input">Strava client secret</label>
-          <input id="strava-client-secret-input" type="password" class="settings-input" autocomplete="off" />
-        </div>
-        <div class="settings-field">
-          <label for="strava-refresh-token-input">Strava refresh token</label>
-          <input id="strava-refresh-token-input" type="password" class="settings-input" autocomplete="off" />
+          <label>Strava</label>
+          <div id="strava-status" class="strava-status">
+            <span id="strava-status-text"></span>
+            <button id="strava-reconnect-btn" class="settings-action-btn">Reconnect Strava</button>
+          </div>
         </div>
       </div>
 

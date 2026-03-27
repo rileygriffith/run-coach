@@ -758,19 +758,22 @@ async function loadSettings() {
 
   initDatePicker(raceDateInput, data.race_date || '', (val) => saveSetting('race_date', val));
 
-  // ── Credentials (write-only — never populate values for security) ─────────
-  function wireCredential(id, key) {
-    const el = document.getElementById(id);
-    let t;
-    el.addEventListener('input', () => {
-      clearTimeout(t);
-      t = setTimeout(() => { if (el.value) saveSetting(key, el.value.trim()); }, 800);
-    });
-  }
-  wireCredential('anthropic-key-input',        'anthropic_api_key');
-  wireCredential('strava-client-id-input',     'strava_client_id');
-  wireCredential('strava-client-secret-input', 'strava_client_secret');
-  wireCredential('strava-refresh-token-input', 'strava_refresh_token');
+  // ── Anthropic key (populate placeholder if set, allow updating) ───────────
+  const anthropicInput = document.getElementById('anthropic-key-input');
+  if (data.anthropic_api_key) anthropicInput.placeholder = '••••••••••••••••••••';
+  let anthropicTimer;
+  anthropicInput.addEventListener('input', () => {
+    clearTimeout(anthropicTimer);
+    anthropicTimer = setTimeout(() => { if (anthropicInput.value) saveSetting('anthropic_api_key', anthropicInput.value.trim()); }, 800);
+  });
+
+  // ── Strava reconnect ──────────────────────────────────────────────────────
+  const stravaStatusText = document.getElementById('strava-status-text');
+  stravaStatusText.textContent = data.strava_refresh_token ? 'Connected' : 'Not connected';
+  stravaStatusText.style.color  = data.strava_refresh_token ? 'var(--green)' : 'var(--text-muted)';
+  document.getElementById('strava-reconnect-btn').addEventListener('click', () => {
+    window.location.href = '/strava/connect';
+  });
 
   // ── Password change ───────────────────────────────────────────────────────
   document.getElementById('change-password-btn').addEventListener('click', async () => {
