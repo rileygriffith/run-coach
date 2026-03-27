@@ -33,7 +33,7 @@ An AI-powered running coach that connects to your Strava account and uses Claude
 docker run -d \
   --name claude-coach \
   --restart unless-stopped \
-  -p 3000:3000 \
+  -p 4218:4218 \
   -v ./data:/app/data \
   ghcr.io/rileygriffith/claude-coach:latest
 ```
@@ -45,13 +45,13 @@ services:
   claude-coach:
     image: ghcr.io/rileygriffith/claude-coach:latest
     ports:
-      - 3000:3000
+      - 4218:4218
     volumes:
       - ./data:/app/data
     restart: unless-stopped
 ```
 
-Open `http://your-server:3000` and follow the setup wizard — no environment variables needed.
+Open `http://your-server:4218` and follow the setup wizard — no environment variables needed.
 
 ### First-run setup
 
@@ -81,7 +81,7 @@ cd claude-coach
 npm install
 echo "NODE_ENV=development" > .env
 npm start
-# → http://localhost:3000
+# → http://localhost:4218
 ```
 
 ---

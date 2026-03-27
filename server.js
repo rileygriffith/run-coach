@@ -1002,5 +1002,5 @@ app.get('/api/raw-activity', async (_req, res) => {
 
 // ── Start ──────────────────────────────────────────────────────────────────────
 
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 4218;
 app.listen(PORT, () => console.log(`Running coach → http://localhost:${PORT}`));

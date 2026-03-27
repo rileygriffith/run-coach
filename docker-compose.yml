@@ -2,7 +2,7 @@ services:
   running-coach:
     build: .
     ports:
-      - "${PORT:-3000}:3000"
+      - "${PORT:-4218}:4218"
     env_file:
       - .env
     volumes:
